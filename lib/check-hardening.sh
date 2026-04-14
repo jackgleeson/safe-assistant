@@ -14,7 +14,7 @@ check_hardening() {
     _check_ssh_agent_loaded || true
 
     if [[ "$problems" -gt 0 && "$strict" == "true" ]]; then
-        fail "Pre-flight checks failed in strict mode ($problems problem(s))"
+        fail "Hardening checks failed in strict mode ($problems problem(s))"
     fi
 }
 

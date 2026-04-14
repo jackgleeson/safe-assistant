@@ -4,7 +4,7 @@ Security-hardening tools for LLM coding assistants. Implements the recommendatio
 
 Two kinds of protection:
 
-- **Terminal assistants** (Claude Code) - `claude-safe` wrapper with pre-flight checks, env var stripping, and optional OS-level user isolation.
+- **Terminal assistants** (Claude Code) - `claude-safe` wrapper with hardening checks, env var stripping, and optional OS-level user isolation.
 - **IDE-embedded assistants** (JetBrains AI, Cursor, Windsurf, Copilot Chat) - `.aiignore` / `.cursorignore` / `.codeiumignore` files generated from a shared deny list.
 
 ## Install
@@ -16,15 +16,15 @@ bash install.sh            # interactive setup
 bash install.sh --dry-run  # preview without making changes
 ```
 
-The installer runs pre-flight checks, offers to install missing Linux deps via apt/npm, syncs `deny-paths.conf` into `~/.claude/settings.json`, symlinks `claude-safe` into `~/.local/bin/`, and (on Linux) offers to set up the `claude-runner` isolated user.
+The installer verifies OS hardening settings, offers to install missing Linux deps via apt/npm, syncs `deny-paths.conf` into `~/.claude/settings.json`, symlinks `claude-safe` into `~/.local/bin/`, and (on Linux) offers to set up the `claude-runner` isolated user.
 
 ## Usage
 
 ```bash
 claude-safe                          # Run Claude Code with hardening
 claude-safe --current-user           # Always run as the current user
-claude-safe --strict                 # Fail on any pre-flight check
-claude-safe --skip-checks            # Skip checks (still strips env vars)
+claude-safe --strict                 # Fail on any hardening check
+claude-safe --skip-checks            # Skip hardening checks (still strips env vars)
 claude-safe -- --model sonnet        # Pass args through to claude
 ```
 
@@ -93,7 +93,7 @@ Multiple layers, none bulletproof alone.
 **Protects against:**
 - Accidental credential exposure via the deny list (`.ssh`, `.env`, `.key`, `.pem`, etc.)
 - SSH/GPG/D-Bus agent leakage via env var stripping
-- Weak OS hardening via pre-flight checks (ptrace_scope, SIP)
+- Weak OS hardening via ptrace_scope and SIP checks
 - Policy drift across a team via the shared `deny-paths.conf`
 
 **Recommendations:**
@@ -103,7 +103,7 @@ Multiple layers, none bulletproof alone.
 
 ## Supported platforms
 
-| Platform | Pre-flight checks | Env stripping | Deny sync | claude-runner |
+| Platform | Hardening checks | Env stripping | Deny sync | claude-runner |
 |---|---|---|---|---|
 | Linux (Debian/Ubuntu) | ✓ | ✓ | ✓ | ✓ |
 | Linux (other distros) | ✓ | ✓ | ✓ | ✓ (install deps manually) |

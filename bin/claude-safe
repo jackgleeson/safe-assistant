@@ -23,7 +23,7 @@ Usage: claude-safe [OPTIONS] [-- CLAUDE_ARGS...]
 
 Security-hardening wrapper for Claude Code.
 
-Pre-flight checks (ptrace_scope, SIP, sandbox deps), strips sensitive env
+Verifies OS hardening (ptrace_scope, SIP, sandbox deps), strips sensitive env
 vars (SSH_AUTH_SOCK, GPG_AGENT_INFO, DBUS_SESSION_BUS_ADDRESS), then
 launches claude - optionally as a separate Linux user for isolation.
 
@@ -35,12 +35,12 @@ ISOLATION MODE
   you've granted (via claude-safe-grant-access). This is a stronger
   boundary than deny rules alone, which rely on the LLM's tool layer.
 
-  Without the runner set up, claude-safe still runs pre-flight checks
+  Without the runner set up, claude-safe still runs hardening checks
   and strips env vars, but Claude runs as your normal user.
 
 Options:
   --strict        Exit with error on any failed check (default: warn and continue)
-  --skip-checks   Skip all pre-flight checks (just strip env vars and launch)
+  --skip-checks   Skip all hardening checks (just strip env vars and launch)
   --current-user  Launch as the current user, even if claude-runner is available
   -h, --help      Show this help message
 
