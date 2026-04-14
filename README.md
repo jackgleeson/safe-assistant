@@ -36,7 +36,7 @@ What `claude-safe` does before launching Claude:
 
 ## Isolation mode (Linux)
 
-`claude-runner` is a separate Linux user account. When Claude runs as this user it **cannot** read your home directory: no `~/.ssh`, `~/.aws`, `~/.gnupg`, browser profiles, etc. It can only read and write the project directories you've explicitly granted, via POSIX ACLs.
+`claude-runner` is a separate Linux user account. When Claude runs as this user it **cannot** read your home directory: no `~/.ssh` or `~/.gnupg`, browser profiles, etc. It can only read and write the project directories you've explicitly granted, via POSIX ACLs.
 
 This is a **stronger** boundary than the deny rules in `settings.json`, which rely on Claude's tool layer honestly matching patterns. OS-level user separation cannot be bypassed by clever bash commands.
 
