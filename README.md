@@ -110,7 +110,23 @@ Multiple layers, none bulletproof alone.
 | macOS | ✓ (SIP) | ✓ | ✓ | ✗ |
 | Other | ✗ | — | — | — |
 
-Requirements: Bash 4+, jq, Claude Code in PATH. Linux also needs bubblewrap, socat, ripgrep, acl, and `@anthropic-ai/sandbox-runtime` (installer can set these up on Debian/Ubuntu).
+### Requirements
+
+All platforms: Bash 4+, Claude Code in `PATH`, and:
+
+- **jq** - JSON processor used by `sync-deny-paths` and the installer to read/merge/write `~/.claude/settings.json` safely.
+
+Linux also needs:
+
+- **bubblewrap (`bwrap`)** - Unprivileged sandboxing tool. Creates isolated namespaces (mount, PID, user, network) so Claude's sandbox runtime can execute bash in a restricted view of the filesystem. Core building block of `@anthropic-ai/sandbox-runtime`.
+- **socat** - Bidirectional data relay. The sandbox runtime uses it to proxy stdio and sockets across the namespace boundary between the sandbox and the host.
+- **ripgrep (`rg`)** - Fast recursive search. Claude Code invokes it directly for the Grep tool; without it code search inside a sandboxed session is slow or broken.
+- **acl (`setfacl`/`getfacl`)** - POSIX Access Control Lists. `claude-safe-grant-access` uses `setfacl` to give the `claude-runner` user read/write on specific project directories without broadening standard Unix permissions.
+- **`@anthropic-ai/sandbox-runtime`** (npm) - Anthropic's sandbox orchestrator. Wraps `bwrap` and `socat` into the runtime Claude Code invokes when it needs to run untrusted bash, and enforces the `sandbox.filesystem` deny rules from `settings.json`.
+
+macOS: SIP is verified via the built-in `csrutil`; no extra packages required.
+
+The installer can install all Linux packages on Debian/Ubuntu via `apt` and `npm`.
 
 ## Project structure
 
