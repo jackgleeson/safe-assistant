@@ -189,12 +189,20 @@ if ! echo "$PATH" | tr ':' '\n' | grep -q "$HOME/.local/bin"; then
 fi
 echo ""
 
-# 5. Make scripts executable
+# 5. Make scripts executable and symlink grant helper
 if [[ "$DRY_RUN" == "false" ]]; then
     chmod +x "$BIN_DIR/claude-safe"
     chmod +x "$BIN_DIR/sync-deny-paths"
     chmod +x "$BIN_DIR/setup-claude-runner"
+    chmod +x "$BIN_DIR/claude-safe-grant-access"
     chmod +x "$SCRIPT_DIR/install.sh"
+
+    GRANT_TARGET="$HOME/.local/bin/claude-safe-grant-access"
+    mkdir -p "$HOME/.local/bin"
+    if [[ ! -L "$GRANT_TARGET" || "$(readlink -f "$GRANT_TARGET")" != "$BIN_DIR/claude-safe-grant-access" ]]; then
+        ln -sf "$BIN_DIR/claude-safe-grant-access" "$GRANT_TARGET"
+        ok "Installed claude-safe-grant-access to $GRANT_TARGET"
+    fi
 fi
 
 # 6. Optional: claude-runner user isolation (Linux only)
@@ -221,13 +229,18 @@ else
 fi
 echo ""
 echo "Usage:"
-echo "  claude-safe                 # Launch Claude Code with hardening"
-echo "  claude-safe --strict        # Fail on any check"
-echo "  claude-safe --as-runner     # Run as restricted claude-runner user"
-echo "  claude-safe -- -p '...'     # Pass args through"
 echo ""
-echo "  bin/sync-deny-paths         # Sync deny-paths.conf to settings.json"
-echo "  bin/sync-deny-paths --aiignore-dir /path/to/project"
-echo "                              # Also generate .aiignore for IDE assistants"
-echo "  bin/setup-claude-runner     # Set up restricted user (Linux)"
+echo "  Launch Claude Code"
+echo "    claude-safe                                    # with hardening"
+echo "    claude-safe --strict                           # fail on any check"
+echo "    claude-safe --as-runner                        # as restricted user"
+echo "    claude-safe -- -p '...'                        # pass args through"
+echo ""
+echo "  Manage deny rules"
+echo "    bin/sync-deny-paths                            # sync to settings.json"
+echo "    bin/sync-deny-paths --aiignore-dir DIR         # also write IDE ignore files"
+echo ""
+echo "  Restricted user (Linux)"
+echo "    bin/setup-claude-runner                        # create runner user"
+echo "    claude-safe-grant-access DIR                   # grant runner access to DIR"
 echo ""

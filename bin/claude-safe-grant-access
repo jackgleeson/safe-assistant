@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+LIB_DIR="$(dirname "$SCRIPT_DIR")/lib"
+
+source "$LIB_DIR/check-platform.sh"
+
+RUNNER_USER="claude-runner"
+
+usage() {
+    cat <<EOF
+Usage: claude-safe-grant-access [--revoke] DIR
+
+Grant (or revoke) $RUNNER_USER read/write access to a project directory via
+ACLs. Traverse permission is also granted on each parent directory so the
+runner can reach DIR.
+
+Options:
+  --revoke    Remove $RUNNER_USER ACLs from DIR (parents are left untouched)
+  -h, --help  Show this help message
+
+Examples:
+  claude-safe-grant-access ~/Projects/myapp
+  claude-safe-grant-access --revoke ~/Projects/myapp
+EOF
+    exit 0
+}
+
+REVOKE=false
+TARGET=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --revoke)   REVOKE=true; shift ;;
+        -h|--help)  usage ;;
+        *)          TARGET="$1"; shift ;;
+    esac
+done
+
+[[ -z "$TARGET" ]] && usage
+
+if [[ ! -d "$TARGET" ]]; then
+    fail "Not a directory: $TARGET"
+fi
+
+if ! command -v setfacl &>/dev/null; then
+    fail "setfacl not found. Install the acl package: sudo apt install acl"
+fi
+
+if ! id "$RUNNER_USER" &>/dev/null; then
+    fail "User '$RUNNER_USER' does not exist. Run bin/setup-claude-runner first."
+fi
+
+TARGET="$(readlink -f "$TARGET")"
+
+if [[ "$REVOKE" == "true" ]]; then
+    info "Revoking $RUNNER_USER ACLs on $TARGET"
+    sudo setfacl -R -x "u:$RUNNER_USER" "$TARGET"
+    sudo setfacl -R -d -x "u:$RUNNER_USER" "$TARGET" 2>/dev/null || true
+    ok "Revoked $RUNNER_USER access to $TARGET"
+else
+    info "Granting $RUNNER_USER read/write access to $TARGET"
+
+    # Grant traverse permission on each parent directory so the runner
+    # can reach the target. Stops at /.
+    dir="$(dirname "$TARGET")"
+    while [[ "$dir" != "/" ]]; do
+        sudo setfacl -m "u:$RUNNER_USER:x" "$dir"
+        dir="$(dirname "$dir")"
+    done
+
+    # Grant rwX recursively on the target
+    sudo setfacl -R -m "u:$RUNNER_USER:rwX" "$TARGET"
+    # Default ACL so new files/dirs inherit the same access
+    sudo setfacl -R -d -m "u:$RUNNER_USER:rwX" "$TARGET"
+
+    ok "Granted $RUNNER_USER read/write access to $TARGET"
+fi

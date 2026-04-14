@@ -61,21 +61,12 @@ else
     ok "Created user '$RUNNER_USER' (no password, login disabled)"
 fi
 
-# --- 2. Group access ---
-
-PRIMARY_GROUP="$(id -gn "$INVOKING_USER")"
-
-if id -nG "$RUNNER_USER" | grep -qw "$PRIMARY_GROUP"; then
-    ok "$RUNNER_USER is already in group '$PRIMARY_GROUP'"
-else
-    info "Adding $RUNNER_USER to group '$PRIMARY_GROUP'..."
-    sudo usermod -aG "$PRIMARY_GROUP" "$RUNNER_USER"
-    ok "Added $RUNNER_USER to group '$PRIMARY_GROUP'"
-fi
+# --- 2. Project access ---
 
 echo ""
-info "Project directories need group read/write for $RUNNER_USER to access them."
-info "For each project, run: chmod -R g+rwX /path/to/project"
+info "Project access is granted per-directory via ACLs."
+info "For each project you want $RUNNER_USER to access, run:"
+echo "    claude-safe-grant-access /path/to/project"
 echo ""
 
 # --- 3. Claude binary access ---
@@ -184,11 +175,10 @@ fi
 echo ""
 echo "--- Authenticate Claude Code ---"
 echo ""
-info "Claude Code needs a one-time login as $RUNNER_USER."
-info "This requires temporary X clipboard access so you can paste the auth code."
-echo ""
 
-if [[ -z "${DISPLAY:-}" ]]; then
+if sudo test -f "$RUNNER_CLAUDE_DIR/.credentials.json"; then
+    ok "$RUNNER_USER is already authenticated with Claude Code"
+elif [[ -z "${DISPLAY:-}" ]]; then
     warn "No \$DISPLAY detected. Skipping auth - run manually later:"
     echo "    sudo -u $RUNNER_USER claude"
 elif ! command -v xhost &>/dev/null; then

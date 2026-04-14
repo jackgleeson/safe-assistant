@@ -101,10 +101,12 @@ sudo -u claude-runner claude
 claude-safe --as-runner
 ```
 
-The runner user needs group read/write access to your project directories:
+Grant the runner user access to each project you want it to work in (uses
+ACLs, so access is per-directory rather than blanket group membership):
 
 ```bash
-chmod -R g+rwX /path/to/project
+claude-safe-grant-access /path/to/project
+claude-safe-grant-access --revoke /path/to/project
 ```
 
 ## Project structure
@@ -114,6 +116,7 @@ llm-safe/
   bin/claude-safe           Claude Code launch wrapper
   bin/sync-deny-paths       Syncs deny-paths.conf to settings and ignore files
   bin/setup-claude-runner   Creates restricted claude-runner user (Linux)
+  bin/claude-safe-grant-access   Grants runner ACL access to a project directory
   lib/check-platform.sh     Platform detection and output helpers
   lib/check-hardening.sh    OS hardening checks (ptrace, SIP)
   lib/check-sandbox.sh      Sandbox dependency checks

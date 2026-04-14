@@ -13,11 +13,15 @@ check_project_access() {
     local dir="${1:-$PWD}"
 
     if ! sudo -u "$RUNNER_USER" test -r "$dir"; then
-        fail "$RUNNER_USER cannot read $dir. Check group permissions (chmod g+rwx)."
+        fail "$RUNNER_USER cannot read $dir.
+  Grant access with: claude-safe-grant-access $dir"
     fi
 
     if ! sudo -u "$RUNNER_USER" test -w "$dir"; then
         warn "$RUNNER_USER cannot write to $dir. Claude may not be able to edit files."
-        warn "  Fix: chmod g+rwx $dir"
+        warn "  Fix: claude-safe-grant-access $dir"
+        return
     fi
+
+    ok "$RUNNER_USER has read/write access to $dir"
 }
