@@ -33,7 +33,7 @@ fi
 
 detect_platform
 
-if [[ "$LLM_SAFE_OS" != "linux" ]]; then
+if [[ "$SAFE_ASSISTANT_OS" != "linux" ]]; then
     fail "claude-runner user isolation is only supported on Linux."
 fi
 
@@ -208,10 +208,6 @@ fi
 
 echo ""
 echo "--- Setup complete ---"
-echo ""
-info "Launch Claude with isolation using:"
-echo ""
-echo "    claude-safe --as-runner"
 echo ""
 warn "After Claude Code updates, re-run this script to update the symlink."
 echo ""

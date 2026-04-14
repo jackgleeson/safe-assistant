@@ -61,10 +61,10 @@ dry_run_skip() {
 
 echo ""
 if [[ "$DRY_RUN" == "true" ]]; then
-    echo "llm-safe installer (dry run)"
+    echo "safe-assistant installer (dry run)"
     echo "============================"
 else
-    echo "llm-safe installer"
+    echo "safe-assistant installer"
     echo "=================="
 fi
 echo ""
@@ -82,7 +82,7 @@ check_sandbox_deps false
 echo ""
 
 # 2. Install missing Linux dependencies
-if [[ "$LLM_SAFE_OS" == "linux" ]]; then
+if [[ "$SAFE_ASSISTANT_OS" == "linux" ]]; then
     missing=()
     command -v bwrap &>/dev/null || missing+=(bubblewrap)
     command -v socat &>/dev/null || missing+=(socat)
@@ -193,6 +193,7 @@ echo ""
 if [[ "$DRY_RUN" == "false" ]]; then
     chmod +x "$BIN_DIR/claude-safe"
     chmod +x "$BIN_DIR/sync-deny-paths"
+    chmod +x "$BIN_DIR/sync-aiignore"
     chmod +x "$BIN_DIR/setup-claude-runner"
     chmod +x "$BIN_DIR/claude-safe-grant-access"
     chmod +x "$SCRIPT_DIR/install.sh"
@@ -206,7 +207,7 @@ if [[ "$DRY_RUN" == "false" ]]; then
 fi
 
 # 6. Optional: claude-runner user isolation (Linux only)
-if [[ "$LLM_SAFE_OS" == "linux" ]]; then
+if [[ "$SAFE_ASSISTANT_OS" == "linux" ]]; then
     echo "--- Restricted user isolation (optional) ---"
     echo ""
     info "A separate 'claude-runner' OS user prevents Claude from accessing"
@@ -231,14 +232,16 @@ echo ""
 echo "Usage:"
 echo ""
 echo "  Launch Claude Code"
-echo "    claude-safe                                    # with hardening"
+echo "    claude-safe                                    # run as isolated claude-safe user if available, else current user"
+echo "    claude-safe --current-user                     # run as the current user"
 echo "    claude-safe --strict                           # fail on any check"
-echo "    claude-safe --as-runner                        # as restricted user"
 echo "    claude-safe -- -p '...'                        # pass args through"
 echo ""
-echo "  Manage deny rules"
-echo "    bin/sync-deny-paths                            # sync to settings.json"
-echo "    bin/sync-deny-paths --aiignore-dir DIR         # also write IDE ignore files"
+echo "  Sync Claude Code deny rules from deny-paths.conf"
+echo "    bin/sync-deny-paths                            # sync to ~/.claude/settings.json"
+echo ""
+echo "  Write .aiignore / .cursorignore / .codeiumignore for IDE assistants"
+echo "    bin/sync-aiignore --dir /path/to/project       # write ignore files"
 echo ""
 echo "  Restricted user (Linux)"
 echo "    bin/setup-claude-runner                        # create runner user"

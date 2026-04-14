@@ -5,9 +5,9 @@ check_hardening() {
     local strict="${1:-false}"
     local problems=0
 
-    if [[ "${LLM_SAFE_OS:-unknown}" == "linux" ]]; then
+    if [[ "${SAFE_ASSISTANT_OS:-unknown}" == "linux" ]]; then
         _check_ptrace_scope "$strict" || ((problems++)) || true
-    elif [[ "${LLM_SAFE_OS:-unknown}" == "macos" ]]; then
+    elif [[ "${SAFE_ASSISTANT_OS:-unknown}" == "macos" ]]; then
         _check_sip "$strict" || ((problems++)) || true
     fi
 

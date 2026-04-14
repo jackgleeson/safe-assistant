@@ -13,7 +13,7 @@ check_sandbox_deps() {
         ((problems++)) || true
     fi
 
-    if [[ "${LLM_SAFE_OS:-unknown}" == "linux" ]]; then
+    if [[ "${SAFE_ASSISTANT_OS:-unknown}" == "linux" ]]; then
         _check_linux_deps || ((problems += $?)) || true
     fi
 

@@ -15,25 +15,39 @@ source "$LIB_DIR/check-runner.sh"
 
 STRICT=false
 SKIP_CHECKS=false
-AS_RUNNER=false
+USE_RUNNER=true
 
 usage() {
     cat <<EOF
 Usage: claude-safe [OPTIONS] [-- CLAUDE_ARGS...]
 
 Security-hardening wrapper for Claude Code.
-Runs pre-flight checks, strips sensitive env vars, then launches claude.
+
+Pre-flight checks (ptrace_scope, SIP, sandbox deps), strips sensitive env
+vars (SSH_AUTH_SOCK, GPG_AGENT_INFO, DBUS_SESSION_BUS_ADDRESS), then
+launches claude - optionally as a separate Linux user for isolation.
+
+ISOLATION MODE
+  If 'claude-runner' is set up (see bin/setup-claude-runner), claude-safe
+  launches Claude as that restricted user instead of as you. That user
+  cannot read your home directory - no ~/.ssh keys, ~/.aws credentials,
+  browser profiles, etc. It only has access to the project directories
+  you've granted (via claude-safe-grant-access). This is a stronger
+  boundary than deny rules alone, which rely on the LLM's tool layer.
+
+  Without the runner set up, claude-safe still runs pre-flight checks
+  and strips env vars, but Claude runs as your normal user.
 
 Options:
-  --strict       Exit with error on any failed check (default: warn and continue)
-  --skip-checks  Skip all pre-flight checks (just strip env vars and launch)
-  --as-runner    Run Claude as the restricted claude-runner user (Linux only)
-  -h, --help     Show this help message
+  --strict        Exit with error on any failed check (default: warn and continue)
+  --skip-checks   Skip all pre-flight checks (just strip env vars and launch)
+  --current-user  Launch as the current user, even if claude-runner is available
+  -h, --help      Show this help message
 
 Examples:
-  claude-safe
+  claude-safe                          # Use claude-runner if set up, else current user
+  claude-safe --current-user           # Run as the current user
   claude-safe --strict
-  claude-safe --as-runner
   claude-safe -- --model sonnet
   claude-safe --skip-checks -- -p "explain this code"
 EOF
@@ -46,26 +60,64 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --strict)    STRICT=true; shift ;;
         --skip-checks) SKIP_CHECKS=true; shift ;;
-        --as-runner) AS_RUNNER=true; shift ;;
+        --current-user) USE_RUNNER=false; shift ;;
         -h|--help)   usage ;;
         --)          shift; CLAUDE_ARGS+=("$@"); break ;;
         *)           CLAUDE_ARGS+=("$1"); shift ;;
     esac
 done
 
-# --- Pre-flight checks ---
+# --- Decide whether to use the runner ---
 
-if [[ "$AS_RUNNER" == "true" ]]; then
-    detect_platform
-    if [[ "$LLM_SAFE_OS" != "linux" ]]; then
-        fail "--as-runner is only supported on Linux"
+detect_platform
+
+# Returns 0 if the runner is fully usable, sets RUNNER_SKIP_REASON otherwise.
+RUNNER_SKIP_REASON=""
+runner_available() {
+    if [[ "$SAFE_ASSISTANT_OS" != "linux" ]]; then
+        RUNNER_SKIP_REASON="not Linux"
+        return 1
     fi
-    check_runner_exists
-    check_project_access "$PWD"
+    if ! id "$RUNNER_USER" &>/dev/null; then
+        RUNNER_SKIP_REASON="$RUNNER_USER user does not exist (run bin/setup-claude-runner)"
+        return 1
+    fi
+    # Passwordless sudo is required for auto mode; without it we'd prompt
+    # silently and confuse the user.
+    if ! sudo -n -u "$RUNNER_USER" true 2>/dev/null; then
+        RUNNER_SKIP_REASON="passwordless sudo to $RUNNER_USER not configured"
+        return 1
+    fi
+    if ! sudo -n -u "$RUNNER_USER" test -f "/home/$RUNNER_USER/.claude/.credentials.json"; then
+        RUNNER_SKIP_REASON="$RUNNER_USER has not authenticated Claude Code yet"
+        return 1
+    fi
+    if ! sudo -n -u "$RUNNER_USER" test -x /usr/local/bin/claude 2>/dev/null \
+      && ! sudo -n -u "$RUNNER_USER" bash -c 'command -v claude' &>/dev/null; then
+        RUNNER_SKIP_REASON="$RUNNER_USER cannot execute claude (run bin/setup-claude-runner)"
+        return 1
+    fi
+    if ! sudo -n -u "$RUNNER_USER" test -r "$PWD"; then
+        RUNNER_SKIP_REASON="$RUNNER_USER cannot read $PWD (run: claude-safe-grant-access $PWD)"
+        return 1
+    fi
+    return 0
+}
+
+AS_RUNNER=false
+if [[ "$USE_RUNNER" == "true" ]]; then
+    if runner_available; then
+        AS_RUNNER=true
+        ok "Running Claude isolated under $RUNNER_USER (use --current-user to disable)"
+    else
+        warn "Isolation unavailable: $RUNNER_SKIP_REASON"
+        info "Falling back to running Claude as your current user ($USER)"
+        info "To enable isolation, run: bin/setup-claude-runner"
+    fi
 fi
 
+
 if [[ "$SKIP_CHECKS" == "false" ]]; then
-    detect_platform
     check_hardening "$STRICT"
     check_sandbox_deps "$STRICT"
 fi
@@ -75,7 +127,7 @@ fi
 unset SSH_AUTH_SOCK 2>/dev/null || true
 unset GPG_AGENT_INFO 2>/dev/null || true
 
-if [[ "${LLM_SAFE_OS:-}" == "linux" ]]; then
+if [[ "${SAFE_ASSISTANT_OS:-}" == "linux" ]]; then
     unset DBUS_SESSION_BUS_ADDRESS 2>/dev/null || true
 fi
 
