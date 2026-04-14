@@ -119,6 +119,11 @@ grant_access_prompt() {
     warn "$RUNNER_USER has no $missing access to $PWD"
     echo "  Without it, Claude running as $RUNNER_USER cannot $([[ $missing == read ]] && echo 'see' || echo 'edit') files here."
     echo ""
+    echo "  This will also chmod o-rwx on every file/dir along the path from"
+    echo "  your home down to $PWD, so $RUNNER_USER cannot see anything else."
+    echo "  Preview the exact changes with:"
+    echo "    claude-safe-grant-access --dry-run $PWD"
+    echo ""
     if [[ ! -t 0 ]]; then
         info "Run: claude-safe-grant-access $PWD"
         return 1

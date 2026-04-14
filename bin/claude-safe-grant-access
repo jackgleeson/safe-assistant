@@ -10,29 +10,52 @@ RUNNER_USER="claude-runner"
 
 usage() {
     cat <<EOF
-Usage: claude-safe-grant-access [--revoke] DIR
+Usage: claude-safe-grant-access [OPTIONS] DIR
 
 Grant (or revoke) $RUNNER_USER read/write access to a project directory via
-ACLs. Traverse permission is also granted on each parent directory so the
-runner can reach DIR.
+ACLs, and lock down everything else in the parent path so $RUNNER_USER can
+only see DIR (and other previously-granted dirs).
+
+How locking works:
+  For each ancestor of DIR up to your home directory, the script:
+    - Removes world (other) read/write/execute bits on every sibling that
+      is not on the path to DIR (so $RUNNER_USER, which is "other" relative
+      to your files, cannot read or traverse them).
+    - Removes world bits on the ancestor itself and adds an ACL granting
+      $RUNNER_USER traverse-only (x) on it.
+  Siblings that already have a $RUNNER_USER ACL (previously granted) are
+  preserved.
+
+Symlinks pointing outside the locked tree are NOT followed; their targets
+keep their original permissions.
 
 Options:
-  --revoke    Remove $RUNNER_USER ACLs from DIR (parents are left untouched)
-  -h, --help  Show this help message
+  --revoke           Remove $RUNNER_USER ACLs from DIR. World bits on
+                     siblings are NOT restored (you set them manually).
+  --no-lock          Only manage ACLs; do not chmod sibling world bits.
+                     (Weaker isolation - other world-readable dirs remain
+                     visible to $RUNNER_USER.)
+  --dry-run          Print what would change without modifying anything.
+  -h, --help         Show this help message.
 
 Examples:
   claude-safe-grant-access ~/Projects/myapp
+  claude-safe-grant-access --dry-run ~/Projects/myapp
   claude-safe-grant-access --revoke ~/Projects/myapp
 EOF
     exit 0
 }
 
 REVOKE=false
+LOCK_SIBLINGS=true
+DRY_RUN=false
 TARGET=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --revoke)   REVOKE=true; shift ;;
+        --no-lock)  LOCK_SIBLINGS=false; shift ;;
+        --dry-run)  DRY_RUN=true; shift ;;
         -h|--help)  usage ;;
         *)          TARGET="$1"; shift ;;
     esac
@@ -54,26 +77,110 @@ fi
 
 TARGET="$(readlink -f "$TARGET")"
 
+INVOKING_USER="$(logname 2>/dev/null || echo "$USER")"
+INVOKING_HOME="$(getent passwd "$INVOKING_USER" | cut -d: -f6)"
+
+if [[ -z "$INVOKING_HOME" || ! -d "$INVOKING_HOME" ]]; then
+    fail "Cannot determine home directory for $INVOKING_USER"
+fi
+INVOKING_HOME="$(readlink -f "$INVOKING_HOME")"
+
+case "$TARGET/" in
+    "$INVOKING_HOME"/*) ;;
+    *) fail "Target $TARGET must be inside $INVOKING_HOME" ;;
+esac
+
+# --- Helpers ---
+
+run() {
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "  [dry-run] $*"
+    else
+        "$@"
+    fi
+}
+
+has_runner_acl() {
+    getfacl -p --absolute-names "$1" 2>/dev/null \
+        | grep -qE "^user:$RUNNER_USER:.*[rwx]"
+}
+
+# --- Revoke ---
+
 if [[ "$REVOKE" == "true" ]]; then
     info "Revoking $RUNNER_USER ACLs on $TARGET"
-    sudo setfacl -R -x "u:$RUNNER_USER" "$TARGET"
-    sudo setfacl -R -d -x "u:$RUNNER_USER" "$TARGET" 2>/dev/null || true
+    run sudo setfacl -R -x "u:$RUNNER_USER" "$TARGET"
+    run sudo setfacl -R -d -x "u:$RUNNER_USER" "$TARGET" 2>/dev/null || true
     ok "Revoked $RUNNER_USER access to $TARGET"
-else
-    info "Granting $RUNNER_USER read/write access to $TARGET"
+    warn "World permission bits on parent siblings were NOT restored."
+    warn "If you want to re-open them, chmod them manually."
+    exit 0
+fi
 
-    # Grant traverse permission on each parent directory so the runner
-    # can reach the target. Stops at /.
-    dir="$(dirname "$TARGET")"
-    while [[ "$dir" != "/" ]]; do
-        sudo setfacl -m "u:$RUNNER_USER:x" "$dir"
-        dir="$(dirname "$dir")"
-    done
+# --- Grant ---
 
-    # Grant rwX recursively on the target
-    sudo setfacl -R -m "u:$RUNNER_USER:rwX" "$TARGET"
-    # Default ACL so new files/dirs inherit the same access
-    sudo setfacl -R -d -m "u:$RUNNER_USER:rwX" "$TARGET"
+# Build (parent, child_on_path) pairs from $INVOKING_HOME down to $TARGET.
+parents=()
+keeps=()
+current="$TARGET"
+while [[ "$current" != "$INVOKING_HOME" ]]; do
+    parents=("$(dirname "$current")" "${parents[@]}")
+    keeps=("$current" "${keeps[@]}")
+    current="$(dirname "$current")"
+done
 
-    ok "Granted $RUNNER_USER read/write access to $TARGET"
+info "Granting $RUNNER_USER read/write access to $TARGET"
+if [[ "$LOCK_SIBLINGS" == "true" ]]; then
+    info "Locking down everything else under $INVOKING_HOME on the path so $RUNNER_USER can only see granted dirs"
+fi
+[[ "$DRY_RUN" == "true" ]] && info "(dry run - no changes will be made)"
+
+locked=0
+preserved=0
+
+for i in "${!parents[@]}"; do
+    parent="${parents[$i]}"
+    keep="${keeps[$i]}"
+
+    if [[ "$LOCK_SIBLINGS" == "true" ]]; then
+        # Lock world bits on every direct child of $parent except $keep
+        # and except entries that already have a $RUNNER_USER ACL.
+        # Symlinks are skipped: chmod follows them on Linux, which would
+        # mutate files outside the locked tree.
+        skipped_links=0
+        while IFS= read -r child; do
+            [[ -z "$child" || "$child" == "$keep" ]] && continue
+            if [[ -L "$child" ]]; then
+                skipped_links=$((skipped_links + 1))
+                continue
+            fi
+            if has_runner_acl "$child"; then
+                preserved=$((preserved + 1))
+                continue
+            fi
+            run sudo chmod o-rwx "$child"
+            locked=$((locked + 1))
+        done < <(find "$parent" -mindepth 1 -maxdepth 1 2>/dev/null)
+        if [[ "$skipped_links" -gt 0 ]]; then
+            warn "Skipped $skipped_links symlink(s) under $parent (chmod would follow them)"
+        fi
+
+        # Lock the ancestor's own world bits (skip $INVOKING_HOME - it is
+        # typically already 710 and stripping further may break things).
+        if [[ "$parent" != "$INVOKING_HOME" ]]; then
+            run sudo chmod o-rwx "$parent"
+        fi
+    fi
+
+    # Grant traverse ACL on the ancestor for $RUNNER_USER
+    run sudo setfacl -m "u:$RUNNER_USER:x" "$parent"
+done
+
+# Grant rwX recursively on the target, plus a default ACL so new files inherit.
+run sudo setfacl -R -m "u:$RUNNER_USER:rwX" "$TARGET"
+run sudo setfacl -R -d -m "u:$RUNNER_USER:rwX" "$TARGET"
+
+ok "Granted $RUNNER_USER read/write access to $TARGET"
+if [[ "$LOCK_SIBLINGS" == "true" ]]; then
+    info "Locked $locked sibling entries; preserved $preserved already-granted entries"
 fi
