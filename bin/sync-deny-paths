@@ -150,9 +150,9 @@ updated=$(echo "$existing" | jq \
     .sandbox.filesystem //= {} |
     .sandbox.filesystem.allowWrite //= ["/tmp"] |
 
-    # Set the deny arrays
-    .permissions.deny = $perms_deny |
-    .sandbox.filesystem.denyRead = $sandbox_deny
+    # Merge deny arrays (add new rules, preserve existing ones)
+    .permissions.deny = ((.permissions.deny // []) + $perms_deny | unique) |
+    .sandbox.filesystem.denyRead = ((.sandbox.filesystem.denyRead // []) + $sandbox_deny | unique)
     '
 )
 

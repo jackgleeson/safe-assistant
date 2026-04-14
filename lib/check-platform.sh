@@ -18,18 +18,18 @@ detect_platform() {
 }
 
 warn() {
-    printf '\033[33m[llm-safe]\033[0m %s\n' "$1" >&2
+    printf '\033[33m[llm-safe] ⚠\033[0m %s\n' "$1" >&2
 }
 
 fail() {
-    printf '\033[31m[llm-safe]\033[0m %s\n' "$1" >&2
+    printf '\033[31m[llm-safe] ✗\033[0m %s\n' "$1" >&2
     exit 1
 }
 
 info() {
-    printf '\033[36m[llm-safe]\033[0m %s\n' "$1" >&2
+    printf '\033[36m[llm-safe] ℹ\033[0m %s\n' "$1" >&2
 }
 
 ok() {
-    printf '\033[32m[llm-safe]\033[0m %s\n' "$1" >&2
+    printf '\033[32m[llm-safe] ✓\033[0m %s\n' "$1" >&2
 }

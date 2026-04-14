@@ -87,17 +87,43 @@ if [[ -z "$CLAUDE_PATH" ]]; then
 elif [[ "$CLAUDE_PATH" == /usr/local/bin/* || "$CLAUDE_PATH" == /usr/bin/* ]]; then
     ok "claude is in a system-wide location ($CLAUDE_PATH)"
 else
-    # Claude is in a user-local path - check if claude-runner can reach it
+    # Claude is under a user home directory. Grant claude-runner traverse-only
+    # permission on the directory chain so it can reach the binary.
+    # This uses ACLs to target only claude-runner, not all users.
     RESOLVED_PATH="$(readlink -f "$CLAUDE_PATH")"
-    if sudo -u "$RUNNER_USER" test -x "$RESOLVED_PATH" 2>/dev/null; then
-        ok "claude at $CLAUDE_PATH is accessible to $RUNNER_USER"
+    RESOLVED_DIR="$(dirname "$RESOLVED_PATH")"
+
+    if ! command -v setfacl &>/dev/null; then
+        fail "setfacl not found. Install the acl package: sudo apt install acl"
+    fi
+
+    info "claude is at $CLAUDE_PATH (inside your home directory)"
+    info "Granting $RUNNER_USER traverse-only access to the claude binary path"
+
+    # Build the list of directories that need traverse permission
+    acl_dirs=()
+    dir="$RESOLVED_DIR"
+    while [[ "$dir" != "/" ]]; do
+        acl_dirs=("$dir" "${acl_dirs[@]}")
+        dir="$(dirname "$dir")"
+    done
+
+    for dir in "${acl_dirs[@]}"; do
+        sudo setfacl -m "u:$RUNNER_USER:x" "$dir"
+    done
+    ok "Granted $RUNNER_USER traverse access (x only) to reach $RESOLVED_PATH"
+
+    # Symlink so claude-runner can find it in PATH
+    if [[ ! -L /usr/local/bin/claude ]]; then
+        sudo ln -s "$RESOLVED_PATH" /usr/local/bin/claude
+        ok "Symlinked /usr/local/bin/claude -> $RESOLVED_PATH"
     else
-        info "claude is at $CLAUDE_PATH (not accessible to $RUNNER_USER)"
-        if prompt_yn "Symlink to /usr/local/bin/claude?"; then
-            sudo ln -sf "$RESOLVED_PATH" /usr/local/bin/claude
-            ok "Symlinked /usr/local/bin/claude -> $RESOLVED_PATH"
+        existing_target="$(readlink -f /usr/local/bin/claude)"
+        if [[ "$existing_target" == "$RESOLVED_PATH" ]]; then
+            ok "/usr/local/bin/claude already points to $RESOLVED_PATH"
         else
-            warn "You will need to ensure $RUNNER_USER can execute claude"
+            sudo ln -sf "$RESOLVED_PATH" /usr/local/bin/claude
+            ok "Updated /usr/local/bin/claude -> $RESOLVED_PATH"
         fi
     fi
 fi
@@ -120,8 +146,13 @@ fi
 
 RUNNER_SETTINGS="$RUNNER_CLAUDE_DIR/settings.json"
 info "Syncing deny paths to $RUNNER_SETTINGS..."
-sudo -u "$RUNNER_USER" \
-    "$SCRIPT_DIR/sync-deny-paths" --settings "$RUNNER_SETTINGS"
+# Generate settings to a temp file (as invoking user who can read the repo),
+# then copy into the runner's home directory via sudo
+tmp_settings="$(mktemp)"
+"$SCRIPT_DIR/sync-deny-paths" --settings "$tmp_settings"
+sudo cp "$tmp_settings" "$RUNNER_SETTINGS"
+sudo chown "$RUNNER_USER:$RUNNER_USER" "$RUNNER_SETTINGS"
+rm -f "$tmp_settings"
 echo ""
 
 # --- 6. Sudoers rule ---
@@ -148,14 +179,49 @@ else
     fi
 fi
 
+# --- 7. Authenticate Claude as runner ---
+
+echo ""
+echo "--- Authenticate Claude Code ---"
+echo ""
+info "Claude Code needs a one-time login as $RUNNER_USER."
+info "This requires temporary X clipboard access so you can paste the auth code."
+echo ""
+
+if [[ -z "${DISPLAY:-}" ]]; then
+    warn "No \$DISPLAY detected. Skipping auth - run manually later:"
+    echo "    sudo -u $RUNNER_USER claude"
+elif ! command -v xhost &>/dev/null; then
+    warn "xhost not found. Skipping auth - install x11-xserver-utils, or auth manually:"
+    echo "    sudo -u $RUNNER_USER claude"
+elif prompt_yn "Run auth now?"; then
+    # Grant X access so clipboard paste works
+    xhost "+si:localuser:$RUNNER_USER" >/dev/null
+    # Revoke on exit, even if the user Ctrl+Cs
+    trap "xhost -si:localuser:$RUNNER_USER >/dev/null 2>&1 || true" EXIT
+
+    sudo -u "$RUNNER_USER" \
+        DISPLAY="$DISPLAY" \
+        claude || true
+
+    xhost "-si:localuser:$RUNNER_USER" >/dev/null
+    trap - EXIT
+    ok "X access revoked"
+else
+    echo "  You can authenticate later with:"
+    echo "    xhost +si:localuser:$RUNNER_USER"
+    echo "    sudo -u $RUNNER_USER claude"
+    echo "    xhost -si:localuser:$RUNNER_USER"
+fi
+
 # --- Done ---
 
 echo ""
 echo "--- Setup complete ---"
 echo ""
-info "Next steps:"
-echo "  1. Authenticate Claude as $RUNNER_USER:"
-echo "     sudo -u $RUNNER_USER claude"
-echo "  2. Launch Claude with user isolation:"
-echo "     claude-safe --as-runner"
+info "Launch Claude with isolation using:"
+echo ""
+echo "    claude-safe --as-runner"
+echo ""
+warn "After Claude Code updates, re-run this script to update the symlink."
 echo ""

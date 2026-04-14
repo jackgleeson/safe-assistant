@@ -69,14 +69,14 @@ else
 fi
 echo ""
 
-# 1. Platform detection and checks
+# 1. Platform detection and checks (read-only, safe in dry-run)
 detect_platform
 echo ""
-echo "--- System hardening checks ---"
+echo "--- System hardening checks (read-only) ---"
 echo ""
 check_hardening false
 echo ""
-echo "--- Sandbox dependency checks ---"
+echo "--- Sandbox dependency checks (read-only) ---"
 echo ""
 check_sandbox_deps false
 echo ""
@@ -87,6 +87,7 @@ if [[ "$LLM_SAFE_OS" == "linux" ]]; then
     command -v bwrap &>/dev/null || missing+=(bubblewrap)
     command -v socat &>/dev/null || missing+=(socat)
     command -v rg &>/dev/null || missing+=(ripgrep)
+    command -v setfacl &>/dev/null || missing+=(acl)
 
     if [[ ${#missing[@]} -gt 0 ]]; then
         echo "Missing apt packages: ${missing[*]}"
@@ -98,14 +99,15 @@ if [[ "$LLM_SAFE_OS" == "linux" ]]; then
         echo ""
     fi
 
-    if ! npm ls -g @anthropic-ai/sandbox-runtime &>/dev/null 2>&1; then
+    # npm ls can write cache files, so skip the check entirely in dry-run
+    if [[ "$DRY_RUN" == "true" ]]; then
+        info "[dry-run] Would check for @anthropic-ai/sandbox-runtime and offer to install"
+    elif ! npm ls -g @anthropic-ai/sandbox-runtime &>/dev/null 2>&1; then
         if prompt_yn "Install @anthropic-ai/sandbox-runtime globally via npm?"; then
-            dry_run_skip "npm install -g @anthropic-ai/sandbox-runtime" || {
-                npm install -g @anthropic-ai/sandbox-runtime
-            }
+            npm install -g @anthropic-ai/sandbox-runtime
         fi
-        echo ""
     fi
+    echo ""
 
     # ptrace_scope fix
     ptrace=$(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null || echo "unknown")

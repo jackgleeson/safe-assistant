@@ -119,10 +119,27 @@ llm-safe/
   lib/check-sandbox.sh      Sandbox dependency checks
   lib/check-runner.sh       claude-runner user verification helpers
   deny-paths.conf           Shared deny list (commit this)
-  templates/settings.json   Baseline Claude Code settings
-  templates/aiignore        Starter .aiignore (manual alternative to sync)
   install.sh                Interactive setup
 ```
+
+## Security model
+
+This project applies multiple layers of defense. Each layer has limitations. None of them are bulletproof on their own.
+
+### What it protects against
+
+- **Accidental credential exposure** - deny rules prevent the assistant from reading `.ssh`, `.env`, `.key`, `.pem`, and other sensitive files. This is the primary use case: stopping the LLM from including secrets in its context window, tool calls, or generated code.
+- **Environment variable leakage** - `claude-safe` strips `SSH_AUTH_SOCK`, `GPG_AGENT_INFO`, and `DBUS_SESSION_BUS_ADDRESS` before launching, so the assistant cannot use your SSH agent, GPG agent, or D-Bus session.
+- **Weak OS hardening** - pre-flight checks warn (or fail in strict mode) if `ptrace_scope` is too permissive or SIP is disabled, since these settings affect whether one process can inspect another's memory.
+- **Policy drift across a team** - the shared `deny-paths.conf` keeps everyone on the same deny list instead of relying on individual settings.
+
+### Recommendations
+
+- Use `claude-runner` (`--as-runner`) for the strongest isolation on Linux
+- Add your own credential paths to `deny-paths.conf` - the defaults are minimal
+- Run `sync-deny-paths` after every change to the deny list
+- The sync script backs up `settings.json` automatically before changes - verify the deny rules after syncing
+- Do not rely solely on bash command deny rules for security - they are easily bypassed
 
 ## Supported platforms
 
