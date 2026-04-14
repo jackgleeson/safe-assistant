@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+LIB_DIR="$PROJECT_DIR/lib"
+
+source "$LIB_DIR/check-platform.sh"
+
+RUNNER_USER="claude-runner"
+INVOKING_USER="$(logname 2>/dev/null || echo "$USER")"
+
+# --- Helpers ---
+
+prompt_yn() {
+    local question="$1" default="${2:-n}"
+    local yn
+    if [[ "$default" == "y" ]]; then
+        read -rp "$question [Y/n] " yn
+        yn="${yn:-y}"
+    else
+        read -rp "$question [y/N] " yn
+        yn="${yn:-n}"
+    fi
+    [[ "$yn" =~ ^[Yy] ]]
+}
+
+# --- Pre-checks ---
+
+if [[ "$(id -u)" -eq 0 ]]; then
+    fail "Do not run this script as root. It will use sudo as needed."
+fi
+
+detect_platform
+
+if [[ "$LLM_SAFE_OS" != "linux" ]]; then
+    fail "claude-runner user isolation is only supported on Linux."
+fi
+
+echo ""
+echo "claude-runner setup"
+echo "==================="
+echo ""
+info "This script creates a restricted '$RUNNER_USER' user for running Claude Code"
+info "with OS-level isolation from your personal files."
+echo ""
+
+# --- 1. Create user ---
+
+if id "$RUNNER_USER" &>/dev/null; then
+    ok "User '$RUNNER_USER' already exists"
+else
+    info "Creating user '$RUNNER_USER'..."
+    sudo useradd \
+        --create-home \
+        --home-dir "/home/$RUNNER_USER" \
+        --shell /bin/bash \
+        --system \
+        "$RUNNER_USER"
+    sudo passwd -l "$RUNNER_USER" >/dev/null
+    ok "Created user '$RUNNER_USER' (no password, login disabled)"
+fi
+
+# --- 2. Group access ---
+
+PRIMARY_GROUP="$(id -gn "$INVOKING_USER")"
+
+if id -nG "$RUNNER_USER" | grep -qw "$PRIMARY_GROUP"; then
+    ok "$RUNNER_USER is already in group '$PRIMARY_GROUP'"
+else
+    info "Adding $RUNNER_USER to group '$PRIMARY_GROUP'..."
+    sudo usermod -aG "$PRIMARY_GROUP" "$RUNNER_USER"
+    ok "Added $RUNNER_USER to group '$PRIMARY_GROUP'"
+fi
+
+echo ""
+info "Project directories need group read/write for $RUNNER_USER to access them."
+info "For each project, run: chmod -R g+rwX /path/to/project"
+echo ""
+
+# --- 3. Claude binary access ---
+
+CLAUDE_PATH="$(command -v claude 2>/dev/null || true)"
+
+if [[ -z "$CLAUDE_PATH" ]]; then
+    warn "claude not found in PATH. Install Claude Code first."
+elif [[ "$CLAUDE_PATH" == /usr/local/bin/* || "$CLAUDE_PATH" == /usr/bin/* ]]; then
+    ok "claude is in a system-wide location ($CLAUDE_PATH)"
+else
+    # Claude is in a user-local path - check if claude-runner can reach it
+    RESOLVED_PATH="$(readlink -f "$CLAUDE_PATH")"
+    if sudo -u "$RUNNER_USER" test -x "$RESOLVED_PATH" 2>/dev/null; then
+        ok "claude at $CLAUDE_PATH is accessible to $RUNNER_USER"
+    else
+        info "claude is at $CLAUDE_PATH (not accessible to $RUNNER_USER)"
+        if prompt_yn "Symlink to /usr/local/bin/claude?"; then
+            sudo ln -sf "$RESOLVED_PATH" /usr/local/bin/claude
+            ok "Symlinked /usr/local/bin/claude -> $RESOLVED_PATH"
+        else
+            warn "You will need to ensure $RUNNER_USER can execute claude"
+        fi
+    fi
+fi
+
+# --- 4. Config directory ---
+
+RUNNER_HOME="/home/$RUNNER_USER"
+RUNNER_CLAUDE_DIR="$RUNNER_HOME/.claude"
+
+if [[ -d "$RUNNER_CLAUDE_DIR" ]]; then
+    ok "$RUNNER_CLAUDE_DIR already exists"
+else
+    info "Creating $RUNNER_CLAUDE_DIR..."
+    sudo mkdir -p "$RUNNER_CLAUDE_DIR"
+    sudo chown "$RUNNER_USER:$RUNNER_USER" "$RUNNER_CLAUDE_DIR"
+    ok "Created $RUNNER_CLAUDE_DIR"
+fi
+
+# --- 5. Sync deny paths ---
+
+RUNNER_SETTINGS="$RUNNER_CLAUDE_DIR/settings.json"
+info "Syncing deny paths to $RUNNER_SETTINGS..."
+sudo -u "$RUNNER_USER" \
+    "$SCRIPT_DIR/sync-deny-paths" --settings "$RUNNER_SETTINGS"
+echo ""
+
+# --- 6. Sudoers rule ---
+
+SUDOERS_FILE="/etc/sudoers.d/claude-runner"
+
+if [[ -f "$SUDOERS_FILE" ]]; then
+    ok "Sudoers rule already exists at $SUDOERS_FILE"
+else
+    echo ""
+    info "A sudoers rule lets you run 'sudo -u $RUNNER_USER' without a password."
+    if prompt_yn "Create sudoers rule for $INVOKING_USER -> $RUNNER_USER?"; then
+        echo "$INVOKING_USER ALL=($RUNNER_USER) NOPASSWD: ALL" | sudo tee "$SUDOERS_FILE" >/dev/null
+        sudo chmod 0440 "$SUDOERS_FILE"
+        # Validate syntax
+        if sudo visudo -cf "$SUDOERS_FILE" &>/dev/null; then
+            ok "Created $SUDOERS_FILE"
+        else
+            sudo rm -f "$SUDOERS_FILE"
+            fail "Sudoers syntax check failed. Rule was removed."
+        fi
+    else
+        warn "Skipped. You will need to enter your password each time you use --as-runner."
+    fi
+fi
+
+# --- Done ---
+
+echo ""
+echo "--- Setup complete ---"
+echo ""
+info "Next steps:"
+echo "  1. Authenticate Claude as $RUNNER_USER:"
+echo "     sudo -u $RUNNER_USER claude"
+echo "  2. Launch Claude with user isolation:"
+echo "     claude-safe --as-runner"
+echo ""

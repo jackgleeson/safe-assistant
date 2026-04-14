@@ -1,0 +1,235 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+LIB_DIR="$PROJECT_DIR/lib"
+
+source "$LIB_DIR/check-platform.sh"
+
+CONF_FILE="$PROJECT_DIR/deny-paths.conf"
+SETTINGS_FILE="$HOME/.claude/settings.json"
+AIIGNORE_DIR=""
+DRY_RUN=false
+
+usage() {
+    cat <<EOF
+Usage: sync-deny-paths [OPTIONS]
+
+Read deny-paths.conf and sync deny rules into:
+  - ~/.claude/settings.json   (Claude Code permissions + sandbox deny)
+  - .aiignore                 (IDE-embedded assistants)
+  - .cursorignore             (Cursor)
+  - .codeiumignore            (Windsurf)
+
+Options:
+  --conf FILE        Path to deny-paths.conf (default: <project>/deny-paths.conf)
+  --settings FILE    Path to settings.json (default: ~/.claude/settings.json)
+  --aiignore-dir DIR Directory to write .aiignore files into (default: none)
+  --dry-run          Print what would be written without modifying any files
+  -h, --help         Show this help message
+
+Examples:
+  sync-deny-paths                                    # Update Claude Code settings only
+  sync-deny-paths --aiignore-dir /path/to/project    # Also write ignore files
+  sync-deny-paths --aiignore-dir .                   # Write ignore files to cwd
+  sync-deny-paths --dry-run                          # Preview all changes
+EOF
+    exit 0
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --conf)          CONF_FILE="$2"; shift 2 ;;
+        --settings)      SETTINGS_FILE="$2"; shift 2 ;;
+        --aiignore-dir)  AIIGNORE_DIR="$2"; shift 2 ;;
+        --dry-run)       DRY_RUN=true; shift ;;
+        -h|--help)       usage ;;
+        *)               fail "Unknown option: $1" ;;
+    esac
+done
+
+# --- Dependency check ---
+
+if ! command -v jq &>/dev/null; then
+    fail "jq is required but not installed. Install it with: sudo apt install jq (Linux) or brew install jq (macOS)"
+fi
+
+# --- Parse conf file ---
+
+if [[ ! -f "$CONF_FILE" ]]; then
+    fail "Config file not found: $CONF_FILE"
+fi
+
+read_deny_rules=()
+sandbox_deny_paths=()
+bash_deny_rules=()
+ignore_patterns=()
+
+while IFS= read -r line; do
+    # Strip leading/trailing whitespace
+    line="$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+
+    # Skip empty lines and comments
+    [[ -z "$line" || "$line" == \#* ]] && continue
+
+    # Bash command deny rules (Claude Code only, not relevant to .aiignore)
+    if [[ "$line" == bash:* ]]; then
+        cmd="${line#bash:}"
+        cmd="$(echo "$cmd" | sed 's/^[[:space:]]*//')"
+        bash_deny_rules+=("Bash($cmd)")
+        continue
+    fi
+
+    # Expand ~ to $HOME for concrete paths
+    expanded="${line/#\~/$HOME}"
+
+    # Everything gets a Read() permission deny rule
+    read_deny_rules+=("Read($line)")
+
+    # Concrete paths (not glob patterns) also go into sandbox.filesystem.denyRead
+    if [[ "$line" != *'*'* && "$line" != *'?'* ]]; then
+        sandbox_deny_paths+=("$expanded")
+    fi
+
+    # All path entries (globs and concrete) go into .aiignore
+    ignore_patterns+=("$line")
+
+done < "$CONF_FILE"
+
+# --- Build JSON arrays ---
+
+permissions_deny_json="[]"
+for rule in "${read_deny_rules[@]}" "${bash_deny_rules[@]}"; do
+    permissions_deny_json=$(echo "$permissions_deny_json" | jq --arg r "$rule" '. + [$r]')
+done
+
+sandbox_deny_json="[]"
+for path in "${sandbox_deny_paths[@]}"; do
+    sandbox_deny_json=$(echo "$sandbox_deny_json" | jq --arg p "$path" '. + [$p]')
+done
+
+# --- Show what we parsed ---
+
+info "Parsed ${#read_deny_rules[@]} read deny rule(s), ${#bash_deny_rules[@]} bash deny rule(s), ${#sandbox_deny_paths[@]} sandbox deny path(s)"
+
+# --- Sync Claude Code settings.json ---
+
+if [[ ! -f "$SETTINGS_FILE" ]]; then
+    if [[ "$DRY_RUN" == "true" ]]; then
+        info "Settings file does not exist: $SETTINGS_FILE (would create)"
+        existing='{}'
+    else
+        info "Creating $SETTINGS_FILE"
+        mkdir -p "$(dirname "$SETTINGS_FILE")"
+        echo '{}' > "$SETTINGS_FILE"
+        existing='{}'
+    fi
+else
+    existing=$(cat "$SETTINGS_FILE")
+
+    # Back up existing settings before modifying
+    if [[ "$existing" != '{}' && "$DRY_RUN" == "false" ]]; then
+        backup_file="${SETTINGS_FILE}.backup.$(date +%Y%m%dT%H%M%S)"
+        cp "$SETTINGS_FILE" "$backup_file"
+        ok "Backed up existing settings to $backup_file"
+    fi
+fi
+
+# Ensure the structure exists, then set the deny arrays
+updated=$(echo "$existing" | jq \
+    --argjson perms_deny "$permissions_deny_json" \
+    --argjson sandbox_deny "$sandbox_deny_json" \
+    '
+    # Ensure nested structure exists
+    .permissions //= {} |
+    .permissions.allow //= [] |
+    .permissions.ask //= [] |
+    .sandbox //= {} |
+    .sandbox.enabled //= true |
+    .sandbox.filesystem //= {} |
+    .sandbox.filesystem.allowWrite //= ["/tmp"] |
+
+    # Set the deny arrays
+    .permissions.deny = $perms_deny |
+    .sandbox.filesystem.denyRead = $sandbox_deny
+    '
+)
+
+if [[ "$DRY_RUN" == "true" ]]; then
+    echo ""
+    echo "Would write to $SETTINGS_FILE:"
+    echo ""
+    echo "$updated" | jq .
+else
+    # Show diff before writing
+    old_deny=$(echo "$existing" | jq -r '.permissions.deny // [] | .[]' 2>/dev/null | sort)
+    new_deny=$(echo "$updated" | jq -r '.permissions.deny // [] | .[]' | sort)
+
+    old_sandbox=$(echo "$existing" | jq -r '.sandbox.filesystem.denyRead // [] | .[]' 2>/dev/null | sort)
+    new_sandbox=$(echo "$updated" | jq -r '.sandbox.filesystem.denyRead // [] | .[]' | sort)
+
+    if [[ "$old_deny" == "$new_deny" && "$old_sandbox" == "$new_sandbox" ]]; then
+        ok "settings.json already in sync"
+    else
+        added_deny=$(comm -13 <(echo "$old_deny") <(echo "$new_deny"))
+        removed_deny=$(comm -23 <(echo "$old_deny") <(echo "$new_deny"))
+        added_sandbox=$(comm -13 <(echo "$old_sandbox") <(echo "$new_sandbox"))
+        removed_sandbox=$(comm -23 <(echo "$old_sandbox") <(echo "$new_sandbox"))
+
+        [[ -n "$removed_deny" ]] && { echo "  permissions.deny removed:"; echo "$removed_deny" | sed 's/^/    - /'; }
+        [[ -n "$added_deny" ]] && { echo "  permissions.deny added:"; echo "$added_deny" | sed 's/^/    + /'; }
+        [[ -n "$removed_sandbox" ]] && { echo "  sandbox.filesystem.denyRead removed:"; echo "$removed_sandbox" | sed 's/^/    - /'; }
+        [[ -n "$added_sandbox" ]] && { echo "  sandbox.filesystem.denyRead added:"; echo "$added_sandbox" | sed 's/^/    + /'; }
+
+        echo "$updated" | jq . > "$SETTINGS_FILE"
+        ok "Updated $SETTINGS_FILE"
+    fi
+fi
+
+# --- Sync .aiignore files for IDE assistants ---
+
+if [[ -n "$AIIGNORE_DIR" ]]; then
+    echo ""
+
+    # Build the ignore file content
+    ignore_content="# Generated by llm-safe from deny-paths.conf"
+    ignore_content+=$'\n'"# Do not edit manually - run: bin/sync-deny-paths --aiignore-dir $(printf '%q' "$AIIGNORE_DIR")"
+    ignore_content+=$'\n'
+    for pattern in "${ignore_patterns[@]}"; do
+        ignore_content+=$'\n'"$pattern"
+    done
+    ignore_content+=$'\n'
+
+    for filename in .aiignore .cursorignore .codeiumignore; do
+        target="$AIIGNORE_DIR/$filename"
+
+        if [[ "$DRY_RUN" == "true" ]]; then
+            echo "Would write to $target:"
+            echo "$ignore_content"
+        else
+            if [[ -f "$target" ]]; then
+                existing_content=$(cat "$target")
+                if [[ "$existing_content" == "$ignore_content" ]]; then
+                    ok "$filename already in sync"
+                    continue
+                fi
+                # Only overwrite if we generated it (has our header)
+                if ! head -1 "$target" | grep -q "Generated by llm-safe"; then
+                    warn "$filename exists but was not generated by llm-safe - skipping"
+                    warn "  Remove it or add 'Generated by llm-safe' to the first line to allow overwrite"
+                    continue
+                fi
+            fi
+            echo "$ignore_content" > "$target"
+            ok "Updated $target"
+        fi
+    done
+fi
+
+# --- Summary ---
+
+if [[ "$DRY_RUN" == "true" ]]; then
+    echo ""
+    info "Dry run - no changes made"
+fi

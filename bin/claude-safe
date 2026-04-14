@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="$(dirname "$SCRIPT_DIR")/lib"
+
+# shellcheck source=../lib/check-platform.sh
+source "$LIB_DIR/check-platform.sh"
+# shellcheck source=../lib/check-hardening.sh
+source "$LIB_DIR/check-hardening.sh"
+# shellcheck source=../lib/check-sandbox.sh
+source "$LIB_DIR/check-sandbox.sh"
+# shellcheck source=../lib/check-runner.sh
+source "$LIB_DIR/check-runner.sh"
+
+STRICT=false
+SKIP_CHECKS=false
+AS_RUNNER=false
+
+usage() {
+    cat <<EOF
+Usage: claude-safe [OPTIONS] [-- CLAUDE_ARGS...]
+
+Security-hardening wrapper for Claude Code.
+Runs pre-flight checks, strips sensitive env vars, then launches claude.
+
+Options:
+  --strict       Exit with error on any failed check (default: warn and continue)
+  --skip-checks  Skip all pre-flight checks (just strip env vars and launch)
+  --as-runner    Run Claude as the restricted claude-runner user (Linux only)
+  -h, --help     Show this help message
+
+Examples:
+  claude-safe
+  claude-safe --strict
+  claude-safe --as-runner
+  claude-safe -- --model sonnet
+  claude-safe --skip-checks -- -p "explain this code"
+EOF
+    exit 0
+}
+
+# Parse our own flags, stop at -- or first unrecognized arg
+CLAUDE_ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --strict)    STRICT=true; shift ;;
+        --skip-checks) SKIP_CHECKS=true; shift ;;
+        --as-runner) AS_RUNNER=true; shift ;;
+        -h|--help)   usage ;;
+        --)          shift; CLAUDE_ARGS+=("$@"); break ;;
+        *)           CLAUDE_ARGS+=("$1"); shift ;;
+    esac
+done
+
+# --- Pre-flight checks ---
+
+if [[ "$AS_RUNNER" == "true" ]]; then
+    detect_platform
+    if [[ "$LLM_SAFE_OS" != "linux" ]]; then
+        fail "--as-runner is only supported on Linux"
+    fi
+    check_runner_exists
+    check_project_access "$PWD"
+fi
+
+if [[ "$SKIP_CHECKS" == "false" ]]; then
+    detect_platform
+    check_hardening "$STRICT"
+    check_sandbox_deps "$STRICT"
+fi
+
+# --- Strip sensitive env vars ---
+
+unset SSH_AUTH_SOCK 2>/dev/null || true
+unset GPG_AGENT_INFO 2>/dev/null || true
+
+if [[ "${LLM_SAFE_OS:-}" == "linux" ]]; then
+    unset DBUS_SESSION_BUS_ADDRESS 2>/dev/null || true
+fi
+
+# --- Launch ---
+
+if ! command -v claude &>/dev/null; then
+    fail "claude not found in PATH"
+fi
+
+if [[ "$AS_RUNNER" == "true" ]]; then
+    exec sudo -u "$RUNNER_USER" --preserve-env=TERM,COLORTERM,LANG \
+        claude "${CLAUDE_ARGS[@]}"
+else
+    exec claude "${CLAUDE_ARGS[@]}"
+fi

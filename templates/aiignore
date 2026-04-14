@@ -1,0 +1,18 @@
+# .aiignore - Prevent IDE AI assistants from reading sensitive paths
+# Copy this file to your project root as .aiignore
+
+# Private configuration (credentials, API keys, tokens)
+config-private/
+config-private/**
+
+# Environment files
+.env
+.env.*
+*.env
+
+# Key material
+*.key
+*.pem
+
+# Local settings overrides that may contain secrets
+LocalSettings.php
