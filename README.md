@@ -96,12 +96,6 @@ Multiple layers, none bulletproof alone.
 - Weak OS hardening via pre-flight checks (ptrace_scope, SIP)
 - Policy drift across a team via the shared `deny-paths.conf`
 
-**Does NOT protect against:**
-- A determined LLM bypassing bash deny rules (`env cmd`, `/abs/path/cmd`, `bash -c`). These are speed bumps, not walls.
-- Sandbox escapes (not implemented here - this project only checks Claude Code's sandbox dependencies).
-- Reads of paths not in the deny list. Cloud credentials (`~/.aws`, `~/.config/gcloud`), package tokens (`~/.npmrc`, `~/.pypirc`), Git credentials (`~/.git-credentials`), and other sensitive files are not denied by default - add them yourself.
-- The LLM modifying `deny-paths.conf` itself. Running as `claude-runner` mitigates this, since the runner cannot write to the safe-assistant repo unless granted.
-
 **Recommendations:**
 - Use `claude-runner` for OS-level isolation on Linux.
 - Expand `deny-paths.conf` to cover credentials specific to your environment.
