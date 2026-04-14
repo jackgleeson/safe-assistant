@@ -71,7 +71,8 @@ done
 
 detect_platform
 
-# Returns 0 if the runner is fully usable, sets RUNNER_SKIP_REASON otherwise.
+# Returns 0 if the runner exists and is usable, sets RUNNER_SKIP_REASON otherwise.
+# Does NOT check project access - that's handled separately so we can prompt to fix it.
 RUNNER_SKIP_REASON=""
 runner_available() {
     if [[ "$SAFE_ASSISTANT_OS" != "linux" ]]; then
@@ -97,18 +98,61 @@ runner_available() {
         RUNNER_SKIP_REASON="$RUNNER_USER cannot execute claude (run bin/setup-claude-runner)"
         return 1
     fi
-    if ! sudo -n -u "$RUNNER_USER" test -r "$PWD"; then
-        RUNNER_SKIP_REASON="$RUNNER_USER cannot read $PWD (run: claude-safe-grant-access $PWD)"
+    return 0
+}
+
+# Returns:
+#   0 - has read+write access
+#   1 - missing read
+#   2 - has read but missing write
+runner_project_access() {
+    sudo -n -u "$RUNNER_USER" test -r "$PWD" || return 1
+    sudo -n -u "$RUNNER_USER" test -w "$PWD" || return 2
+    return 0
+}
+
+grant_access_prompt() {
+    local missing="$1"  # "read" or "write"
+    local grant_bin
+    grant_bin="$(command -v claude-safe-grant-access || echo "$SCRIPT_DIR/claude-safe-grant-access")"
+
+    warn "$RUNNER_USER has no $missing access to $PWD"
+    echo "  Without it, Claude running as $RUNNER_USER cannot $([[ $missing == read ]] && echo 'see' || echo 'edit') files here."
+    echo ""
+    if [[ ! -t 0 ]]; then
+        info "Run: claude-safe-grant-access $PWD"
         return 1
     fi
-    return 0
+    read -rp "Grant $RUNNER_USER read/write access to $PWD now? [Y/n] " yn
+    yn="${yn:-y}"
+    if [[ "$yn" =~ ^[Yy] ]]; then
+        "$grant_bin" "$PWD" || return 1
+        return 0
+    fi
+    info "Skipped. You can grant later with: claude-safe-grant-access $PWD"
+    return 1
 }
 
 AS_RUNNER=false
 if [[ "$USE_RUNNER" == "true" ]]; then
     if runner_available; then
-        AS_RUNNER=true
-        ok "Running Claude isolated under $RUNNER_USER (use --current-user to disable)"
+        access_rc=0
+        runner_project_access || access_rc=$?
+        case "$access_rc" in
+            0) AS_RUNNER=true ;;
+            1)
+                if grant_access_prompt read; then AS_RUNNER=true; fi
+                ;;
+            2)
+                if grant_access_prompt write; then AS_RUNNER=true; fi
+                ;;
+        esac
+
+        if [[ "$AS_RUNNER" == "true" ]]; then
+            ok "Running Claude isolated under $RUNNER_USER (use --current-user to disable)"
+        else
+            info "Falling back to running Claude as your current user ($USER)"
+        fi
     else
         warn "Isolation unavailable: $RUNNER_SKIP_REASON"
         info "Falling back to running Claude as your current user ($USER)"

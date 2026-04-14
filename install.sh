@@ -129,56 +129,67 @@ if [[ "$SAFE_ASSISTANT_OS" == "linux" ]]; then
     fi
 fi
 
-# 3. Sync deny paths into settings.json
-echo "--- Claude Code settings ---"
-echo ""
-
-CLAUDE_SETTINGS="$HOME/.claude/settings.json"
-if [[ ! -f "$CLAUDE_SETTINGS" ]]; then
-    if prompt_yn "No settings.json found. Create one from deny-paths.conf?"; then
-        dry_run_skip "create $CLAUDE_SETTINGS from deny-paths.conf" || {
-            mkdir -p "$HOME/.claude"
-            "$BIN_DIR/sync-deny-paths"
-        }
-    fi
-else
-    info "Existing settings found at $CLAUDE_SETTINGS"
-    if prompt_yn "Sync deny-paths.conf into settings.json?"; then
-        dry_run_skip "sync deny-paths.conf into $CLAUDE_SETTINGS" || {
-            "$BIN_DIR/sync-deny-paths"
-        }
-    else
-        echo "  You can sync later with: bin/sync-deny-paths"
-        echo "  Preview first with:      bin/sync-deny-paths --dry-run"
-    fi
+# 3. Claude Code steps (only if claude is installed)
+CLAUDE_INSTALLED=false
+if command -v claude &>/dev/null; then
+    CLAUDE_INSTALLED=true
 fi
-echo ""
 
-# 4. Symlink claude-safe to PATH
-echo "--- Install claude-safe to PATH ---"
-echo ""
+if [[ "$CLAUDE_INSTALLED" == "false" ]]; then
+    info "Claude Code is not installed - skipping Claude settings sync and claude-safe install"
+    info "Install Claude Code (https://docs.claude.com/en/docs/claude-code) then re-run this script"
+    echo ""
+else
+    echo "--- Claude Code settings ---"
+    echo ""
 
-INSTALL_TARGET="$HOME/.local/bin/claude-safe"
-
-if [[ -f "$INSTALL_TARGET" || -L "$INSTALL_TARGET" ]]; then
-    current_target=$(readlink -f "$INSTALL_TARGET" 2>/dev/null || echo "unknown")
-    if [[ "$current_target" == "$BIN_DIR/claude-safe" ]]; then
-        ok "claude-safe already linked to $INSTALL_TARGET"
-    else
-        if prompt_yn "claude-safe exists at $INSTALL_TARGET (points to $current_target). Replace it?"; then
-            dry_run_skip "update symlink $INSTALL_TARGET -> $BIN_DIR/claude-safe" || {
-                ln -sf "$BIN_DIR/claude-safe" "$INSTALL_TARGET"
-                ok "Symlink updated"
+    CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+    if [[ ! -f "$CLAUDE_SETTINGS" ]]; then
+        if prompt_yn "No settings.json found. Create one from deny-paths.conf?"; then
+            dry_run_skip "create $CLAUDE_SETTINGS from deny-paths.conf" || {
+                mkdir -p "$HOME/.claude"
+                "$BIN_DIR/sync-deny-paths"
             }
         fi
+    else
+        info "Existing settings found at $CLAUDE_SETTINGS"
+        if prompt_yn "Sync deny-paths.conf into settings.json?"; then
+            dry_run_skip "sync deny-paths.conf into $CLAUDE_SETTINGS" || {
+                "$BIN_DIR/sync-deny-paths"
+            }
+        else
+            echo "  You can sync later with: bin/sync-deny-paths"
+            echo "  Preview first with:      bin/sync-deny-paths --dry-run"
+        fi
     fi
-else
-    if prompt_yn "Symlink claude-safe to $INSTALL_TARGET?"; then
-        dry_run_skip "symlink $INSTALL_TARGET -> $BIN_DIR/claude-safe" || {
-            mkdir -p "$HOME/.local/bin"
-            ln -sf "$BIN_DIR/claude-safe" "$INSTALL_TARGET"
-            ok "Installed to $INSTALL_TARGET"
-        }
+    echo ""
+
+    # 4. Symlink claude-safe to PATH
+    echo "--- Install claude-safe to PATH ---"
+    echo ""
+
+    INSTALL_TARGET="$HOME/.local/bin/claude-safe"
+
+    if [[ -f "$INSTALL_TARGET" || -L "$INSTALL_TARGET" ]]; then
+        current_target=$(readlink -f "$INSTALL_TARGET" 2>/dev/null || echo "unknown")
+        if [[ "$current_target" == "$BIN_DIR/claude-safe" ]]; then
+            ok "claude-safe already linked to $INSTALL_TARGET"
+        else
+            if prompt_yn "claude-safe exists at $INSTALL_TARGET (points to $current_target). Replace it?"; then
+                dry_run_skip "update symlink $INSTALL_TARGET -> $BIN_DIR/claude-safe" || {
+                    ln -sf "$BIN_DIR/claude-safe" "$INSTALL_TARGET"
+                    ok "Symlink updated"
+                }
+            fi
+        fi
+    else
+        if prompt_yn "Symlink claude-safe to $INSTALL_TARGET?"; then
+            dry_run_skip "symlink $INSTALL_TARGET -> $BIN_DIR/claude-safe" || {
+                mkdir -p "$HOME/.local/bin"
+                ln -sf "$BIN_DIR/claude-safe" "$INSTALL_TARGET"
+                ok "Installed to $INSTALL_TARGET"
+            }
+        fi
     fi
 fi
 
@@ -206,8 +217,8 @@ if [[ "$DRY_RUN" == "false" ]]; then
     fi
 fi
 
-# 6. Optional: claude-runner user isolation (Linux only)
-if [[ "$SAFE_ASSISTANT_OS" == "linux" ]]; then
+# 6. Optional: claude-runner user isolation (Linux only, needs claude installed)
+if [[ "$SAFE_ASSISTANT_OS" == "linux" && "$CLAUDE_INSTALLED" == "true" ]]; then
     echo "--- Restricted user isolation (optional) ---"
     echo ""
     info "A separate 'claude-runner' OS user prevents Claude from accessing"
