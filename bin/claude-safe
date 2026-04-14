@@ -156,12 +156,12 @@ if [[ "$USE_RUNNER" == "true" ]]; then
         if [[ "$AS_RUNNER" == "true" ]]; then
             ok "Running Claude isolated under $RUNNER_USER (use --current-user to disable)"
         else
-            info "Falling back to running Claude as your current user ($USER)"
+            fail "Aborting: could not run isolated under $RUNNER_USER. Re-run with --current-user to launch without isolation."
         fi
     else
         warn "Isolation unavailable: $RUNNER_SKIP_REASON"
-        info "Falling back to running Claude as your current user ($USER)"
         info "To enable isolation, run: bin/setup-claude-runner"
+        fail "Aborting. Re-run with --current-user to launch without isolation."
     fi
 fi
 
