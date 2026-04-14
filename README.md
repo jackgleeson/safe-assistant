@@ -1,4 +1,4 @@
-# safe-assistant
+# Safe-Assistant
 
 Security-hardening tools for LLM coding assistants. Implements the recommendations from the [Fundraising AI Coding Assistant Safe Usage Guide](https://wikitech.wikimedia.org/wiki/Fundraising/AI).
 
@@ -10,7 +10,7 @@ Two kinds of protection:
 ## Install
 
 ```bash
-git clone <repo-url> safe-assistant
+git clone https://github.com/jackgleeson/safe-assistant
 cd safe-assistant
 bash install.sh            # interactive setup
 bash install.sh --dry-run  # preview without making changes
