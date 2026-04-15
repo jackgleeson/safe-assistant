@@ -25,7 +25,7 @@ Security-hardening wrapper for Claude Code.
 
 Verifies OS hardening (ptrace_scope, SIP, sandbox deps), strips sensitive env
 vars (SSH_AUTH_SOCK, GPG_AGENT_INFO, DBUS_SESSION_BUS_ADDRESS), then
-launches claude - optionally as a separate Linux user for isolation.
+launches claude - optionally as a separate OS user for isolation.
 
 ISOLATION MODE
   If 'claude-runner' is set up (see bin/setup-claude-runner), claude-safe
@@ -74,12 +74,20 @@ detect_platform
 # Returns 0 if the runner exists and is usable, sets RUNNER_SKIP_REASON otherwise.
 # Does NOT check project access - that's handled separately so we can prompt to fix it.
 RUNNER_SKIP_REASON=""
+_user_exists() {
+    case "$SAFE_ASSISTANT_OS" in
+        linux) id "$RUNNER_USER" &>/dev/null ;;
+        macos) dscl . -read "/Users/$RUNNER_USER" &>/dev/null ;;
+        *) return 1 ;;
+    esac
+}
+
 runner_available() {
-    if [[ "$SAFE_ASSISTANT_OS" != "linux" ]]; then
-        RUNNER_SKIP_REASON="not Linux"
-        return 1
-    fi
-    if ! id "$RUNNER_USER" &>/dev/null; then
+    case "$SAFE_ASSISTANT_OS" in
+        linux|macos) ;;
+        *) RUNNER_SKIP_REASON="unsupported platform"; return 1 ;;
+    esac
+    if ! _user_exists; then
         RUNNER_SKIP_REASON="$RUNNER_USER user does not exist (run bin/setup-claude-runner)"
         return 1
     fi
@@ -89,7 +97,7 @@ runner_available() {
         RUNNER_SKIP_REASON="passwordless sudo to $RUNNER_USER not configured"
         return 1
     fi
-    if ! sudo -n -u "$RUNNER_USER" test -f "/home/$RUNNER_USER/.claude/.credentials.json"; then
+    if ! sudo -n -u "$RUNNER_USER" test -f "$RUNNER_HOME_BASE/$RUNNER_USER/.claude/.credentials.json"; then
         RUNNER_SKIP_REASON="$RUNNER_USER has not authenticated Claude Code yet"
         return 1
     fi
@@ -188,11 +196,11 @@ if [[ "$AS_RUNNER" == "true" ]]; then
     # Set terminal title as a persistent reminder
     printf '\033]0;Claude (as %s)\007' "$RUNNER_USER"
 
-    exec sudo -u "$RUNNER_USER" --preserve-env=TERM,COLORTERM,LANG \
-        claude "${CLAUDE_ARGS[@]}"
+    exec sudo -H -u "$RUNNER_USER" --preserve-env=TERM,COLORTERM,LANG \
+        claude "${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}"
 else
     if ! command -v claude &>/dev/null; then
         fail "claude not found in PATH"
     fi
-    exec claude "${CLAUDE_ARGS[@]}"
+    exec claude "${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}"
 fi

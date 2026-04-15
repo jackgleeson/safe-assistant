@@ -217,14 +217,14 @@ if [[ "$DRY_RUN" == "false" ]]; then
     fi
 fi
 
-# 6. Optional: claude-runner user isolation (Linux only, needs claude installed)
-if [[ "$SAFE_ASSISTANT_OS" == "linux" && "$CLAUDE_INSTALLED" == "true" ]]; then
+# 6. Optional: claude-runner user isolation (needs claude installed)
+if [[ ( "$SAFE_ASSISTANT_OS" == "linux" || "$SAFE_ASSISTANT_OS" == "macos" ) && "$CLAUDE_INSTALLED" == "true" ]]; then
     echo "--- Restricted user isolation (optional) ---"
     echo ""
-    info "A separate 'claude-runner' OS user prevents Claude from accessing"
+    info "A separate '$RUNNER_USER' OS user prevents Claude from accessing"
     info "your personal files (~/.ssh, ~/.gnupg, etc.) at the OS level."
     echo ""
-    if prompt_yn "Set up claude-runner restricted user? (requires sudo)"; then
+    if prompt_yn "Set up $RUNNER_USER restricted user? (requires sudo)"; then
         dry_run_skip "run bin/setup-claude-runner" || {
             "$BIN_DIR/setup-claude-runner"
         }
@@ -254,7 +254,7 @@ echo ""
 echo "  Write .aiignore / .cursorignore / .codeiumignore for IDE assistants"
 echo "    bin/sync-aiignore --dir /path/to/project       # write ignore files"
 echo ""
-echo "  Restricted user (Linux)"
+echo "  Restricted user (Linux / macOS)"
 echo "    bin/setup-claude-runner                        # create runner user"
 echo "    claude-safe-grant-access DIR                   # grant runner access to DIR"
 echo ""

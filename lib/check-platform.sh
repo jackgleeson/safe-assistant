@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Platform detection - sets SAFE_ASSISTANT_OS to "linux" or "macos"
+# Platform detection - sets SAFE_ASSISTANT_OS to "linux" or "macos",
+# plus RUNNER_USER and RUNNER_HOME_BASE for the claude-runner isolation flow.
 
 detect_platform() {
     local kernel
@@ -14,7 +15,16 @@ detect_platform() {
             ;;
     esac
 
-    export SAFE_ASSISTANT_OS
+    if [[ "$SAFE_ASSISTANT_OS" == "macos" ]]; then
+        # macOS system-user convention: leading underscore.
+        RUNNER_USER="${RUNNER_USER:-_claude-runner}"
+        RUNNER_HOME_BASE="${RUNNER_HOME_BASE:-/Users}"
+    else
+        RUNNER_USER="${RUNNER_USER:-claude-runner}"
+        RUNNER_HOME_BASE="${RUNNER_HOME_BASE:-/home}"
+    fi
+
+    export SAFE_ASSISTANT_OS RUNNER_USER RUNNER_HOME_BASE
 }
 
 warn() {

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Helpers for claude-runner restricted user
-
-RUNNER_USER="claude-runner"
+# Helpers for claude-runner restricted user.
+# RUNNER_USER and RUNNER_HOME_BASE are set by detect_platform in check-platform.sh.
 
 check_runner_exists() {
     if ! id "$RUNNER_USER" &>/dev/null; then

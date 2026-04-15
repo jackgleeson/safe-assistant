@@ -9,7 +9,7 @@ Security-hardening tools for LLM coding assistants. Implements the recommendatio
 - **Shared deny list** - you edit `deny-paths.conf`; everything else is generated.
 - **IDE assistants** - `bin/sync-aiignore` writes `.aiignore`, `.cursorignore`, and `.codeiumignore` into your projects.
 - **CLI assistants (Claude Code)** - `bin/sync-deny-paths` writes deny rules into `~/.claude/settings.json`, and `claude-safe` wraps `claude` with hardening checks and env var stripping.
-- **Optional Linux isolation** - `claude-runner` runs Claude as a separate OS user that can't read your home directory.
+- **Optional OS-user isolation** - `claude-runner` runs Claude as a separate OS user that can't read your home directory. Linux and macOS.
  
 Supported IDE assistants: JetBrains AI, Cursor, Windsurf, VS Code, VS Codium.
 
@@ -78,9 +78,9 @@ bash: node *
 bash: npm *
 ```
 
-## Optional Linux isolation
+## Optional OS-user isolation
 
-`claude-runner` is a separate Linux user account. When Claude runs as this user it **cannot** read your home directory: no `~/.ssh`, `~/.gnupg`, browser profiles, etc. It can only read and write the project directories you've explicitly granted, via POSIX ACLs.
+`claude-runner` is a separate OS user account (`claude-runner` on Linux, `_claude-runner` on macOS). When Claude runs as this user it **cannot** read your home directory: no `~/.ssh`, `~/.gnupg`, browser profiles, etc. It can only read and write the project directories you've explicitly granted, via file ACLs (POSIX on Linux, native ACLs on macOS).
 
 This is stronger than the deny rules in `settings.json`, which rely on Claude's tool layer matching patterns correctly. OS-level user separation can't be bypassed by bash commands.
 
@@ -93,6 +93,8 @@ claude-safe-grant-access --revoke /path/to/project  # revoke later
 ```
 
 After setup, plain `claude-safe` automatically uses the runner when it's fully configured and falls back to running as your user (with a clear warning) otherwise.
+
+On macOS, the OAuth auth step runs inline: `setup-claude-runner` launches `sudo -u _claude-runner -i claude`, Claude prints an auth URL that opens in your browser, and you paste the code back into the runner's terminal.
 
 ## Reference
 
@@ -118,7 +120,7 @@ Applies to `claude-safe` only. The IDE assistant flow (`bin/sync-aiignore`) work
 |---|---|---|---|---|
 | Linux (Debian/Ubuntu) | ✓ | ✓ | ✓ | ✓ |
 | Linux (other distros) | ✓ | ✓ | ✓ | ✓ (install deps manually) |
-| macOS | ✓ (SIP) | ✓ | ✓ | ✗ |
+| macOS (12+) | ✓ (SIP) | ✓ | ✓ | ✓ |
 | Other | ✗ | - | - | - |
 
 ### Requirements

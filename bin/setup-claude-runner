@@ -7,7 +7,6 @@ LIB_DIR="$PROJECT_DIR/lib"
 
 source "$LIB_DIR/check-platform.sh"
 
-RUNNER_USER="claude-runner"
 INVOKING_USER="$(logname 2>/dev/null || echo "$USER")"
 
 # --- Helpers ---
@@ -33,9 +32,13 @@ fi
 
 detect_platform
 
-if [[ "$SAFE_ASSISTANT_OS" != "linux" ]]; then
-    fail "claude-runner user isolation is only supported on Linux."
-fi
+case "$SAFE_ASSISTANT_OS" in
+    linux|macos) ;;
+    *) fail "claude-runner user isolation is only supported on Linux and macOS." ;;
+esac
+
+RUNNER_HOME="$RUNNER_HOME_BASE/$RUNNER_USER"
+RUNNER_CLAUDE_DIR="$RUNNER_HOME/.claude"
 
 echo ""
 echo "claude-runner setup"
@@ -47,17 +50,83 @@ echo ""
 
 # --- 1. Create user ---
 
-if id "$RUNNER_USER" &>/dev/null; then
-    ok "User '$RUNNER_USER' already exists"
-else
-    info "Creating user '$RUNNER_USER'..."
+_create_user_linux() {
     sudo useradd \
         --create-home \
-        --home-dir "/home/$RUNNER_USER" \
+        --home-dir "$RUNNER_HOME" \
         --shell /bin/bash \
         --system \
         "$RUNNER_USER"
     sudo passwd -l "$RUNNER_USER" >/dev/null
+}
+
+# Lowest free numeric ID in the macOS system range (300-499), for either
+# Users/UniqueID or Groups/PrimaryGroupID. System IDs stay out of the normal
+# user range and out of the login window.
+_next_free_id_macos() {
+    local kind="$1" attr="$2" id=300
+    local used
+    used="$(dscl . -list "/$kind" "$attr" 2>/dev/null | awk '{print $2}' | sort -n)"
+    while echo "$used" | grep -qx "$id"; do
+        id=$((id + 1))
+        [[ $id -ge 500 ]] && return 1
+    done
+    echo "$id"
+}
+
+_create_user_macos() {
+    # Dedicated matching group so the runner isn't in `staff` (which is the
+    # default primary group for regular users and has read on many dirs).
+    if ! dscl . -read "/Groups/$RUNNER_USER" &>/dev/null; then
+        local gid
+        gid="$(_next_free_id_macos Groups PrimaryGroupID)" \
+            || fail "No free GID in system range 300-499"
+        info "Creating group '$RUNNER_USER' (GID $gid)"
+        sudo dscl . -create "/Groups/$RUNNER_USER"
+        sudo dscl . -create "/Groups/$RUNNER_USER" PrimaryGroupID "$gid"
+        sudo dscl . -create "/Groups/$RUNNER_USER" RealName "Claude Runner"
+        sudo dscl . -create "/Groups/$RUNNER_USER" Password '*'
+    fi
+
+    local gid
+    gid="$(dscl . -read "/Groups/$RUNNER_USER" PrimaryGroupID | awk '{print $2}')"
+
+    local uid
+    uid="$(_next_free_id_macos Users UniqueID)" \
+        || fail "No free UID in system range 300-499"
+
+    info "Creating user '$RUNNER_USER' (UID $uid)"
+    sudo dscl . -create "/Users/$RUNNER_USER"
+    sudo dscl . -create "/Users/$RUNNER_USER" UserShell /bin/bash
+    sudo dscl . -create "/Users/$RUNNER_USER" RealName "Claude Runner"
+    sudo dscl . -create "/Users/$RUNNER_USER" UniqueID "$uid"
+    sudo dscl . -create "/Users/$RUNNER_USER" PrimaryGroupID "$gid"
+    sudo dscl . -create "/Users/$RUNNER_USER" NFSHomeDirectory "$RUNNER_HOME"
+    sudo dscl . -create "/Users/$RUNNER_USER" Password '*'
+    # Hide from the login window.
+    sudo dscl . -create "/Users/$RUNNER_USER" IsHidden 1
+
+    sudo mkdir -p "$RUNNER_HOME"
+    sudo chown "$RUNNER_USER:$RUNNER_USER" "$RUNNER_HOME"
+    sudo chmod 750 "$RUNNER_HOME"
+}
+
+_user_exists() {
+    case "$SAFE_ASSISTANT_OS" in
+        linux) id "$RUNNER_USER" &>/dev/null ;;
+        macos) dscl . -read "/Users/$RUNNER_USER" &>/dev/null ;;
+    esac
+}
+
+if _user_exists; then
+    ok "User '$RUNNER_USER' already exists"
+else
+    info "Creating user '$RUNNER_USER'..."
+    if [[ "$SAFE_ASSISTANT_OS" == "macos" ]]; then
+        _create_user_macos
+    else
+        _create_user_linux
+    fi
     ok "Created user '$RUNNER_USER' (no password, login disabled)"
 fi
 
@@ -73,38 +142,46 @@ echo ""
 
 CLAUDE_PATH="$(command -v claude 2>/dev/null || true)"
 
+# Grant the runner traverse-only (execute) permission on a single directory.
+_grant_traverse() {
+    local dir="$1"
+    if [[ "$SAFE_ASSISTANT_OS" == "macos" ]]; then
+        sudo chmod +a "user:$RUNNER_USER allow execute" "$dir" 2>/dev/null || true
+    else
+        sudo setfacl -m "u:$RUNNER_USER:x" "$dir"
+    fi
+}
+
 if [[ -z "$CLAUDE_PATH" ]]; then
     warn "claude not found in PATH. Install Claude Code first."
-elif [[ "$CLAUDE_PATH" == /usr/local/bin/* || "$CLAUDE_PATH" == /usr/bin/* ]]; then
+elif [[ "$CLAUDE_PATH" == /usr/local/bin/* || "$CLAUDE_PATH" == /usr/bin/* || "$CLAUDE_PATH" == /opt/homebrew/* ]]; then
     ok "claude is in a system-wide location ($CLAUDE_PATH)"
 else
     # Claude is under a user home directory. Grant claude-runner traverse-only
     # permission on the directory chain so it can reach the binary.
-    # This uses ACLs to target only claude-runner, not all users.
     RESOLVED_PATH="$(readlink -f "$CLAUDE_PATH")"
     RESOLVED_DIR="$(dirname "$RESOLVED_PATH")"
 
-    if ! command -v setfacl &>/dev/null; then
+    if [[ "$SAFE_ASSISTANT_OS" == "linux" ]] && ! command -v setfacl &>/dev/null; then
         fail "setfacl not found. Install the acl package: sudo apt install acl"
     fi
 
     info "claude is at $CLAUDE_PATH (inside your home directory)"
     info "Granting $RUNNER_USER traverse-only access to the claude binary path"
 
-    # Build the list of directories that need traverse permission
     acl_dirs=()
     dir="$RESOLVED_DIR"
     while [[ "$dir" != "/" ]]; do
-        acl_dirs=("$dir" "${acl_dirs[@]}")
+        acl_dirs=("$dir" "${acl_dirs[@]+"${acl_dirs[@]}"}")
         dir="$(dirname "$dir")"
     done
 
     for dir in "${acl_dirs[@]}"; do
-        sudo setfacl -m "u:$RUNNER_USER:x" "$dir"
+        _grant_traverse "$dir"
     done
     ok "Granted $RUNNER_USER traverse access (x only) to reach $RESOLVED_PATH"
 
-    # Symlink so claude-runner can find it in PATH
+    # Symlink so claude-runner can find it in PATH.
     if [[ ! -L /usr/local/bin/claude ]]; then
         sudo ln -s "$RESOLVED_PATH" /usr/local/bin/claude
         ok "Symlinked /usr/local/bin/claude -> $RESOLVED_PATH"
@@ -121,9 +198,6 @@ fi
 
 # --- 4. Config directory ---
 
-RUNNER_HOME="/home/$RUNNER_USER"
-RUNNER_CLAUDE_DIR="$RUNNER_HOME/.claude"
-
 if [[ -d "$RUNNER_CLAUDE_DIR" ]]; then
     ok "$RUNNER_CLAUDE_DIR already exists"
 else
@@ -137,8 +211,6 @@ fi
 
 RUNNER_SETTINGS="$RUNNER_CLAUDE_DIR/settings.json"
 info "Syncing deny paths to $RUNNER_SETTINGS..."
-# Generate settings to a temp file (as invoking user who can read the repo),
-# then copy into the runner's home directory via sudo
 tmp_settings="$(mktemp)"
 "$SCRIPT_DIR/sync-deny-paths" --settings "$tmp_settings"
 sudo cp "$tmp_settings" "$RUNNER_SETTINGS"
@@ -148,7 +220,7 @@ echo ""
 
 # --- 6. Sudoers rule ---
 
-SUDOERS_FILE="/etc/sudoers.d/claude-runner"
+SUDOERS_FILE="/etc/sudoers.d/$RUNNER_USER"
 
 if [[ -f "$SUDOERS_FILE" ]]; then
     ok "Sudoers rule already exists at $SUDOERS_FILE"
@@ -158,7 +230,6 @@ else
     if prompt_yn "Create sudoers rule for $INVOKING_USER -> $RUNNER_USER?"; then
         echo "$INVOKING_USER ALL=($RUNNER_USER) NOPASSWD: ALL" | sudo tee "$SUDOERS_FILE" >/dev/null
         sudo chmod 0440 "$SUDOERS_FILE"
-        # Validate syntax
         if sudo visudo -cf "$SUDOERS_FILE" &>/dev/null; then
             ok "Created $SUDOERS_FILE"
         else
@@ -166,7 +237,7 @@ else
             fail "Sudoers syntax check failed. Rule was removed."
         fi
     else
-        warn "Skipped. You will need to enter your password each time you use --as-runner."
+        warn "Skipped. You will need to enter your password each time you use claude-safe."
     fi
 fi
 
@@ -176,8 +247,25 @@ echo ""
 echo "--- Authenticate Claude Code ---"
 echo ""
 
-if sudo test -f "$RUNNER_CLAUDE_DIR/.credentials.json"; then
+_runner_has_credentials() {
+    sudo test -f "$RUNNER_CLAUDE_DIR/.credentials.json"
+}
+
+if _runner_has_credentials; then
     ok "$RUNNER_USER is already authenticated with Claude Code"
+elif [[ "$SAFE_ASSISTANT_OS" == "macos" ]]; then
+    # No X11 bridge needed. Claude Code's OAuth prints a URL that opens in the
+    # invoking user's default browser; the runner's terminal then accepts the
+    # pasted code. So run it inline here - the browser launch happens in the
+    # user's GUI session even though `claude` itself runs as $RUNNER_USER.
+    info "Launching 'sudo -u $RUNNER_USER -i claude' for OAuth."
+    info "When prompted, open the printed URL in your browser, then paste the code back."
+    if prompt_yn "Run auth now?"; then
+        sudo -u "$RUNNER_USER" -i claude || true
+    else
+        echo "  You can authenticate later with:"
+        echo "    sudo -u $RUNNER_USER -i claude"
+    fi
 elif [[ -z "${DISPLAY:-}" ]]; then
     warn "No \$DISPLAY detected. Skipping auth - run manually later:"
     echo "    sudo -u $RUNNER_USER claude"
@@ -185,9 +273,7 @@ elif ! command -v xhost &>/dev/null; then
     warn "xhost not found. Skipping auth - install x11-xserver-utils, or auth manually:"
     echo "    sudo -u $RUNNER_USER claude"
 elif prompt_yn "Run auth now?"; then
-    # Grant X access so clipboard paste works
     xhost "+si:localuser:$RUNNER_USER" >/dev/null
-    # Revoke on exit, even if the user Ctrl+Cs
     trap "xhost -si:localuser:$RUNNER_USER >/dev/null 2>&1 || true" EXIT
 
     sudo -u "$RUNNER_USER" \
