@@ -116,8 +116,9 @@ sudo -u claude-runner ls ~/Projects/granted-project
 sudo -u claude-runner ls ~/
 sudo -u claude-runner cat ~/.ssh/id_rsa
 
-# Should fail after claude-safe-restrict-access: runner is explicitly denied.
-sudo -u claude-runner ls ~/Projects/granted-project/some-subdir
+# Should fail: a path you've run 'claude-safe-restrict-access' on is
+# explicitly denied, regardless of 'other' permission bits.
+sudo -u claude-runner ls ~/Projects/restricted-project
 
 # Show the ACL on a path (Linux). Look for 'user:claude-runner:---' (deny)
 # or 'user:claude-runner:rwx' (grant).
