@@ -88,9 +88,9 @@ bash: npm *
 
 ## Optional OS-user isolation
 
-`claude-runner` is a separate OS user account (`claude-runner` on Linux, `_claude-runner` on macOS). When Claude runs as this user it **cannot** read your home directory: no `~/.ssh`, `~/.gnupg`, browser profiles, etc. It can only read and write the project directories you've explicitly granted, via file ACLs (POSIX on Linux, native ACLs on macOS).
+`claude-runner` is a dedicated OS user account (`claude-runner` on Linux, `_claude-runner` on macOS) with no password and no login shell access. When Claude runs as this user, the kernel refuses every read or write to anything outside the project directories you've explicitly granted: your SSH private keys, GPG keyring, `.env` files in other projects, shell history, and any other file owned by your user are all unreachable. Access is granted per-project via file ACLs (POSIX on Linux, native ACLs on macOS), and revoked with `claude-safe-restrict-access`.
 
-This is stronger than the deny rules in `settings.json`, which rely on Claude's tool layer matching patterns correctly. OS-level user separation can't be bypassed by bash commands.
+This is a substantially stronger guarantee than the deny rules in `settings.json`, which depend on Claude's tool layer correctly classifying every tool call and matching every glob. Those rules are policy. OS-level user separation is enforced by the kernel on every syscall, so no amount of creative `bash` invocation, symlink trickery, or prompt injection can bypass it: the runner simply doesn't have permission.
 
 One-time setup:
 
