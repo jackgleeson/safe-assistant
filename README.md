@@ -98,7 +98,6 @@ One-time setup:
 bin/setup-claude-runner                             # create user, configure sudoers, authenticate Claude
 claude-safe-grant-access /path/to/project           # grant runner access to a project
 claude-safe-restrict-access /path/to/project        # revoke runner access later
-claude-safe-grant-access --revoke /path/to/project  # equivalent to claude-safe-restrict-access
 ```
 
 After setup, plain `claude-safe` automatically uses the runner when it's fully configured and falls back to running as your user (with a clear warning) otherwise.
