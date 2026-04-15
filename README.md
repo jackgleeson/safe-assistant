@@ -57,12 +57,12 @@ After setup, plain `claude-safe` automatically uses the runner when it's fully c
 Sync to Claude Code:
 
 ```bash
-vim deny-paths.conf              # edit the shared list
+nano deny-paths.conf             # edit the shared list
 bin/sync-deny-paths --dry-run    # preview changes
 bin/sync-deny-paths              # apply to ~/.claude/settings.json
 ```
 
-Using an IDE-embedded assistant (Cursor, Windsurf, Copilot, etc.)? Write ignore files into your project separately:
+Using an IDE-embedded assistant (JetBrains AI, Cursor, Windsurf, Copilot, etc.)? Write ignore files into your project separately:
 
 ```bash
 bin/sync-aiignore --dir /path/to/project    # writes .aiignore, .cursorignore, .codeiumignore
