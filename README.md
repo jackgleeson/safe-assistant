@@ -10,8 +10,8 @@ Security-hardening tools for LLM coding assistants. Implements the recommendatio
 - **IDE assistants** - `bin/sync-aiignore` writes `.aiignore`, `.cursorignore`, and `.codeiumignore` into your projects.
 - **CLI assistants (Claude Code)** - `bin/sync-deny-paths` writes deny rules into `~/.claude/settings.json`, and `claude-safe` wraps `claude` with hardening checks and env var stripping.
 - **Optional Linux isolation** - `claude-runner` runs Claude as a separate OS user that can't read your home directory.
-
-Supported IDE assistants: JetBrains AI, Cursor, Windsurf, VS Code, Codeium.
+ 
+Supported IDE assistants: JetBrains AI, Cursor, Windsurf, VS Code, VS Codium.
 
 ## Quick start (IDE assistants)
 
