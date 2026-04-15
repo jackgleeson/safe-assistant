@@ -128,8 +128,6 @@ getfacl -p ~/Projects/granted-project
 ls -lde ~/Projects/granted-project
 ```
 
-If the runner can read something it shouldn't, it's usually because the path has permissive `other` bits and no deny ACL. Run `claude-safe-restrict-access` on it, or remove world read with `chmod o-rwx`.
-
 ## Reference
 
 ### deny-paths.conf format
