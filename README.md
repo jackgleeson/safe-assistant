@@ -117,14 +117,14 @@ sudo -u claude-runner ls ~/
 sudo -u claude-runner cat ~/.ssh/id_rsa
 
 # Should fail after claude-safe-restrict-access: runner is explicitly denied.
-sudo -u claude-runner ls ~/Projects/granted-project/lib
+sudo -u claude-runner ls ~/Projects/granted-project/some-subdir
 
 # Show the ACL on a path (Linux). Look for 'user:claude-runner:---' (deny)
 # or 'user:claude-runner:rwx' (grant).
-getfacl -p ~/Projects/granted-project/lib
+getfacl -p ~/Projects/granted-project
 
 # Show the ACL on a path (macOS).
-ls -lde ~/Projects/granted-project/lib
+ls -lde ~/Projects/granted-project
 ```
 
 If the runner can read something it shouldn't, it's usually because the path has permissive `other` bits and no deny ACL. Run `claude-safe-restrict-access` on it, or remove world read with `chmod o-rwx`.
