@@ -10,7 +10,7 @@ Security-hardening tools for LLM coding assistants. Implements the recommendatio
 - **IDE assistants** - `bin/sync-aiignore` writes `.aiignore`, `.cursorignore`, and `.codeiumignore` into your projects.
 - **CLI assistants (Claude Code)** - `bin/sync-deny-paths` writes deny rules into `~/.claude/settings.json`, and `claude-safe` wraps `claude` with hardening checks and env var stripping.
 - **Optional OS-user isolation** - `claude-runner` runs Claude as a separate OS user that can't read your home directory. Linux and macOS.
- 
+
 Supported IDE assistants: JetBrains AI, Cursor, Windsurf, VS Code, VS Codium.
 
 ## Quick start (IDE assistants)
@@ -43,7 +43,15 @@ bash install.sh            # interactive setup
 bash install.sh --dry-run  # preview without making changes
 ```
 
-The installer verifies OS hardening (ptrace_scope on Linux, SIP on macOS), offers to install missing Linux deps via apt/npm, syncs `deny-paths.conf` into `~/.claude/settings.json`, symlinks `claude-safe` into `~/.local/bin/`, and (on Linux) offers to set up the `claude-runner` isolated user.
+The installer verifies OS hardening (ptrace_scope on Linux, SIP on macOS), offers to install missing Linux deps via apt/npm, syncs `deny-paths.conf` into `~/.claude/settings.json`, symlinks `claude-safe` into `~/.local/bin/`, and offers to set up the `claude-runner` isolated user (Linux or macOS).
+
+### Uninstall
+
+```bash
+bash uninstall.sh
+```
+
+Interactively reverses each step: removes the `~/.local/bin` symlinks, strips `deny-paths.conf` rules from `~/.claude/settings.json` (with a backup), deletes the `claude-runner` user (and group on macOS), revokes project ACLs granted via `claude-safe-grant-access`, and on Linux offers to remove `/etc/sysctl.d/10-ptrace.conf`. The repo itself is left in place.
 
 ### Usage
 
@@ -57,9 +65,9 @@ claude-safe -- --model sonnet        # Pass args through to claude
 
 Before launch, `claude-safe`:
 
-1. Verifies OS hardening (`ptrace_scope` on Linux, SIP on macOS) and sandbox deps (`bwrap`, `socat`, `ripgrep`, `@anthropic-ai/sandbox-runtime`).
+1. Verifies OS hardening: `ptrace_scope` plus sandbox deps (`bwrap`, `socat`, `ripgrep`, `@anthropic-ai/sandbox-runtime`) on Linux, SIP on macOS.
 2. Strips `SSH_AUTH_SOCK`, `GPG_AGENT_INFO`, and `DBUS_SESSION_BUS_ADDRESS` so Claude can't use your agents or D-Bus session.
-3. Launches Claude, either as your user or as `claude-runner` if isolation is set up.
+3. Launches Claude, either as your user or as the runner user (`claude-runner` on Linux, `_claude-runner` on macOS) if isolation is set up.
 
 ### Re-syncing the deny list
 
