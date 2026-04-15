@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Revoke claude-runner access to a project directory.
+# This is a convenience wrapper around:
+#   claude-safe-grant-access --revoke DIR
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+
+usage() {
+    cat <<EOF
+Usage: claude-safe-restrict-access [OPTIONS] DIR
+
+Revoke claude-runner access to a project directory by removing its ACL
+entries.  This is the inverse of claude-safe-grant-access.
+
+Note: world permission bits that were locked down when access was granted
+are NOT automatically restored.  Restore them manually if needed.
+
+Options:
+  --dry-run   Print what would change without modifying anything.
+  -h, --help  Show this help message.
+
+Examples:
+  claude-safe-restrict-access ~/Projects/myapp
+  claude-safe-restrict-access --dry-run ~/Projects/myapp
+EOF
+    exit 0
+}
+
+ARGS=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help) usage ;;
+        *) ARGS+=("$1"); shift ;;
+    esac
+done
+
+exec "$SCRIPT_DIR/claude-safe-grant-access" --revoke "${ARGS[@]+"${ARGS[@]}"}"

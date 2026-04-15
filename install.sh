@@ -212,13 +212,21 @@ if [[ "$DRY_RUN" == "false" ]]; then
     _ensure_exec "$BIN_DIR/sync-aiignore"
     _ensure_exec "$BIN_DIR/setup-claude-runner"
     _ensure_exec "$BIN_DIR/claude-safe-grant-access"
+    _ensure_exec "$BIN_DIR/claude-safe-restrict-access"
     _ensure_exec "$SCRIPT_DIR/install.sh"
 
-    GRANT_TARGET="$HOME/.local/bin/claude-safe-grant-access"
     mkdir -p "$HOME/.local/bin"
+
+    GRANT_TARGET="$HOME/.local/bin/claude-safe-grant-access"
     if [[ ! -L "$GRANT_TARGET" || "$(readlink -f "$GRANT_TARGET")" != "$BIN_DIR/claude-safe-grant-access" ]]; then
         ln -sf "$BIN_DIR/claude-safe-grant-access" "$GRANT_TARGET"
         ok "Installed claude-safe-grant-access to $GRANT_TARGET"
+    fi
+
+    RESTRICT_TARGET="$HOME/.local/bin/claude-safe-restrict-access"
+    if [[ ! -L "$RESTRICT_TARGET" || "$(readlink -f "$RESTRICT_TARGET")" != "$BIN_DIR/claude-safe-restrict-access" ]]; then
+        ln -sf "$BIN_DIR/claude-safe-restrict-access" "$RESTRICT_TARGET"
+        ok "Installed claude-safe-restrict-access to $RESTRICT_TARGET"
     fi
 fi
 
@@ -248,7 +256,7 @@ echo ""
 echo "Usage:"
 echo ""
 echo "  Launch Claude Code"
-echo "    claude-safe                                    # run as isolated claude-safe user if available, else current user"
+echo "    claude-safe                                    # run as isolated $RUNNER_USER user if available, else current user"
 echo "    claude-safe --current-user                     # run as the current user"
 echo "    claude-safe --strict                           # fail on any check"
 echo "    claude-safe -- -p '...'                        # pass args through"
@@ -262,4 +270,6 @@ echo ""
 echo "  Restricted user (Linux / macOS)"
 echo "    bin/setup-claude-runner                        # create runner user"
 echo "    claude-safe-grant-access DIR                   # grant runner access to DIR"
+echo "    claude-safe-restrict-access DIR                # revoke runner access to DIR"
+echo "    claude-safe-grant-access --revoke DIR          # equivalent to claude-safe-restrict-access"
 echo ""

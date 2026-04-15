@@ -97,12 +97,38 @@ One-time setup:
 ```bash
 bin/setup-claude-runner                             # create user, configure sudoers, authenticate Claude
 claude-safe-grant-access /path/to/project           # grant runner access to a project
-claude-safe-grant-access --revoke /path/to/project  # revoke later
+claude-safe-restrict-access /path/to/project        # revoke runner access later
+claude-safe-grant-access --revoke /path/to/project  # equivalent to claude-safe-restrict-access
 ```
 
 After setup, plain `claude-safe` automatically uses the runner when it's fully configured and falls back to running as your user (with a clear warning) otherwise.
 
 On macOS, the OAuth auth step runs inline: `setup-claude-runner` launches `sudo -u _claude-runner -i claude`, Claude prints an auth URL that opens in your browser, and you paste the code back into the runner's terminal.
+
+### Verifying isolation
+
+Because you have passwordless sudo to the runner, you can check exactly what the runner can and can't see without launching Claude. Substitute `_claude-runner` on macOS.
+
+```bash
+# Should succeed: runner can read a granted project.
+sudo -u claude-runner ls ~/Projects/granted-project
+
+# Should fail with "Permission denied": your home directory is off-limits.
+sudo -u claude-runner ls ~/
+sudo -u claude-runner cat ~/.ssh/id_rsa
+
+# Should fail after claude-safe-restrict-access: runner is explicitly denied.
+sudo -u claude-runner ls ~/Projects/granted-project/lib
+
+# Show the ACL on a path (Linux). Look for 'user:claude-runner:---' (deny)
+# or 'user:claude-runner:rwx' (grant).
+getfacl -p ~/Projects/granted-project/lib
+
+# Show the ACL on a path (macOS).
+ls -lde ~/Projects/granted-project/lib
+```
+
+If the runner can read something it shouldn't, it's usually because the path has permissive `other` bits and no deny ACL. Run `claude-safe-restrict-access` on it, or remove world read with `chmod o-rwx`.
 
 ## Reference
 
