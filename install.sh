@@ -202,12 +202,17 @@ echo ""
 
 # 5. Make scripts executable and symlink grant helper
 if [[ "$DRY_RUN" == "false" ]]; then
-    chmod +x "$BIN_DIR/claude-safe"
-    chmod +x "$BIN_DIR/sync-deny-paths"
-    chmod +x "$BIN_DIR/sync-aiignore"
-    chmod +x "$BIN_DIR/setup-claude-runner"
-    chmod +x "$BIN_DIR/claude-safe-grant-access"
-    chmod +x "$SCRIPT_DIR/install.sh"
+    # Only chmod if not already executable - avoids failing on files we don't
+    # own (e.g. left over from runner-owned writes) when the bit is already set.
+    _ensure_exec() {
+        [[ -x "$1" ]] || chmod +x "$1"
+    }
+    _ensure_exec "$BIN_DIR/claude-safe"
+    _ensure_exec "$BIN_DIR/sync-deny-paths"
+    _ensure_exec "$BIN_DIR/sync-aiignore"
+    _ensure_exec "$BIN_DIR/setup-claude-runner"
+    _ensure_exec "$BIN_DIR/claude-safe-grant-access"
+    _ensure_exec "$SCRIPT_DIR/install.sh"
 
     GRANT_TARGET="$HOME/.local/bin/claude-safe-grant-access"
     mkdir -p "$HOME/.local/bin"

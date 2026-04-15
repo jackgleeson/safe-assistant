@@ -113,10 +113,11 @@ else
         '
         if .permissions.deny then
             .permissions.deny = [.permissions.deny[] | select(. as $r | $perms_remove | index($r) | not)]
-        end |
+        else . end
+        |
         if .sandbox.filesystem.denyRead then
             .sandbox.filesystem.denyRead = [.sandbox.filesystem.denyRead[] | select(. as $r | $sandbox_remove | index($r) | not)]
-        end
+        else . end
         ')
 
     if [[ "$existing" == "$updated" ]]; then
