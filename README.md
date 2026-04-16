@@ -5,7 +5,7 @@ Security-hardening tooling for LLM coding assistants. Keeps one shared deny list
 ## Choose your workflow
 
 - **Claude Code in the terminal** - install `claude-safe`. Go to [Quick start](#quick-start).
-- **Claude Code inside a JetBrains IDE** - install `claude-safe`, then point the [Claude Code plugin](https://plugins.jetbrains.com/plugin/27310-claude-code-beta-) at it. Go to [Quick start](#quick-start), then [JetBrains plugin](#jetbrains-plugin).
+- **Claude Code inside a JetBrains IDE** - Go to [Quick start](#quick-start), then [JetBrains plugin](#jetbrains-plugin).
 - **JetBrains AI / Cursor / Windsurf / VS Code / VS Codium**  no install needed. Generate ignore files for your project for all IDEs and commit to git. Done. Go to [IDE assistants](#ide-assistants).
 
 ## Quick start
