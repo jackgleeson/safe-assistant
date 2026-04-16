@@ -30,8 +30,7 @@ Symlinks pointing outside the locked tree are NOT followed; their targets
 keep their original permissions.
 
 Options:
-  --revoke           Remove $RUNNER_USER ACLs from DIR. World bits on
-                     siblings are NOT restored (you set them manually).
+  --revoke           Remove $RUNNER_USER ACLs from DIR.
   --no-lock          Only manage ACLs; do not chmod sibling world bits.
                      (Weaker isolation - other world-readable dirs remain
                      visible to $RUNNER_USER.)
@@ -204,8 +203,6 @@ if [[ "$REVOKE" == "true" ]]; then
     info "Revoking $RUNNER_USER ACLs on $TARGET"
     acl_revoke_recursive "$TARGET"
     ok "Revoked $RUNNER_USER access to $TARGET"
-    warn "World permission bits on parent siblings were NOT restored."
-    warn "If you want to re-open them, chmod them manually."
     exit 0
 fi
 
