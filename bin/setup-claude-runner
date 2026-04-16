@@ -220,7 +220,21 @@ sudo chown "$RUNNER_USER:$RUNNER_USER" "$RUNNER_SETTINGS"
 rm -f "$tmp_settings"
 echo ""
 
-# --- 6. Sudoers rule ---
+# --- 6. Copy CLAUDE.md ---
+
+USER_CLAUDE_MD="$HOME/.claude/CLAUDE.md"
+RUNNER_CLAUDE_MD="$RUNNER_CLAUDE_DIR/CLAUDE.md"
+
+if [[ -f "$USER_CLAUDE_MD" ]]; then
+    info "Copying CLAUDE.md to $RUNNER_CLAUDE_MD..."
+    sudo cp "$USER_CLAUDE_MD" "$RUNNER_CLAUDE_MD"
+    sudo chown "$RUNNER_USER:$RUNNER_USER" "$RUNNER_CLAUDE_MD"
+    ok "Copied CLAUDE.md"
+else
+    info "No CLAUDE.md at $USER_CLAUDE_MD, skipping"
+fi
+
+# --- 7. Sudoers rule ---
 
 SUDOERS_FILE="/etc/sudoers.d/$RUNNER_USER"
 
@@ -243,7 +257,7 @@ else
     fi
 fi
 
-# --- 7. Authenticate Claude as runner ---
+# --- 8. Authenticate Claude as runner ---
 
 echo ""
 echo "--- Authenticate Claude Code ---"
