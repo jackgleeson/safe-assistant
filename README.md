@@ -65,7 +65,7 @@ Before launch, `claude-safe`:
 
 ## Why the isolated runner account is safer
 
-Safe-Assistant creates a separate, locked-down OS account called `claude-runner` (`_claude-runner` on macOS). The account has no password and can't be logged into. When Claude runs under it, the only folders it can open are the specific projects you've approved. Credentials, customer data, other projects, and every other file on the machine stay out of reach.
+Safe-Assistant creates a separate, locked-down OS account called `claude-runner` (`_claude-runner` on macOS). The account has no password and can't be logged into. When Claude runs under it, the only folders it can open are the specific projects you've approved. Credentials, user data, other projects, and every other file on the machine stay out of reach.
 
 Without this, the standard Claude Code deny rules in `settings.json` only work if the assistant chooses to honour them. With an isolated account, the operating system does the blocking directly, so there's no prompt, command, or workaround that lets Claude reach files it hasn't been given access to. The account simply doesn't have permission.
 
