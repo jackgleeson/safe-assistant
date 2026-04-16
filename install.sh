@@ -30,7 +30,7 @@ esac
 # --- Helpers ---
 
 prompt_yn() {
-    local question="$1" default="${2:-n}"
+    local question="$1" default="${2:-y}"
 
     if [[ "$DRY_RUN" == "true" ]]; then
         # In dry-run mode, show the prompt but auto-answer yes to show all actions

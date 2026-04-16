@@ -12,7 +12,7 @@ INVOKING_USER="$(logname 2>/dev/null || echo "$USER")"
 # --- Helpers ---
 
 prompt_yn() {
-    local question="$1" default="${2:-n}"
+    local question="$1" default="${2:-y}"
     local yn
     if [[ "$default" == "y" ]]; then
         read -rp "$question [Y/n] " yn
@@ -214,11 +214,13 @@ fi
 # runner's ACL grants are the real access boundary, and this setting only
 # affects the restricted runner account.
 if command -v git &>/dev/null; then
-    if sudo -n -H -u "$RUNNER_USER" git config --global --get-all safe.directory 2>/dev/null | grep -Fxq '*'; then
+    # Run git from /tmp so getcwd() succeeds for the newly-created runner user,
+    # which has no read access to the script's current working directory yet.
+    if (cd /tmp && sudo -n -H -u "$RUNNER_USER" git config --global --get-all safe.directory 2>/dev/null) | grep -Fxq '*'; then
         ok "$RUNNER_USER git already trusts granted repos"
     else
         info "Setting safe.directory = * in $RUNNER_USER's gitconfig"
-        sudo -H -u "$RUNNER_USER" git config --global --add safe.directory '*'
+        (cd /tmp && sudo -H -u "$RUNNER_USER" git config --global --add safe.directory '*')
         ok "Set safe.directory = * for $RUNNER_USER"
     fi
 else
@@ -294,6 +296,7 @@ elif [[ "$SAFE_ASSISTANT_OS" == "macos" ]]; then
     # user's GUI session even though `claude` itself runs as $RUNNER_USER.
     info "Launching 'sudo -u $RUNNER_USER -i claude' for OAuth."
     info "When prompted, open the printed URL in your browser, then paste the code back."
+    info "Once authenticated, exit Claude Code (Ctrl-C or Ctrl-D) to continue setup."
     if prompt_yn "Run auth now?"; then
         sudo -u "$RUNNER_USER" -i claude || true
     else
@@ -306,22 +309,25 @@ elif [[ -z "${DISPLAY:-}" ]]; then
 elif ! command -v xhost &>/dev/null; then
     warn "xhost not found. Skipping auth - install x11-xserver-utils, or auth manually:"
     echo "    sudo -u $RUNNER_USER claude"
-elif prompt_yn "Run auth now?"; then
-    xhost "+si:localuser:$RUNNER_USER" >/dev/null
-    trap "xhost -si:localuser:$RUNNER_USER >/dev/null 2>&1 || true" EXIT
-
-    sudo -u "$RUNNER_USER" \
-        DISPLAY="$DISPLAY" \
-        claude || true
-
-    xhost "-si:localuser:$RUNNER_USER" >/dev/null
-    trap - EXIT
-    ok "X access revoked"
 else
-    echo "  You can authenticate later with:"
-    echo "    xhost +si:localuser:$RUNNER_USER"
-    echo "    sudo -u $RUNNER_USER claude"
-    echo "    xhost -si:localuser:$RUNNER_USER"
+    info "Once authenticated, exit Claude Code (Ctrl-C or Ctrl-D) to continue setup."
+    if prompt_yn "Run auth now?"; then
+        xhost "+si:localuser:$RUNNER_USER" >/dev/null
+        trap "xhost -si:localuser:$RUNNER_USER >/dev/null 2>&1 || true" EXIT
+
+        sudo -u "$RUNNER_USER" \
+            DISPLAY="$DISPLAY" \
+            claude || true
+
+        xhost "-si:localuser:$RUNNER_USER" >/dev/null
+        trap - EXIT
+        ok "X access revoked"
+    else
+        echo "  You can authenticate later with:"
+        echo "    xhost +si:localuser:$RUNNER_USER"
+        echo "    sudo -u $RUNNER_USER claude"
+        echo "    xhost -si:localuser:$RUNNER_USER"
+    fi
 fi
 
 # --- Done ---

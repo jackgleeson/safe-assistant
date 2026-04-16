@@ -197,7 +197,7 @@ fi
 
 if [[ "$AS_RUNNER" == "true" ]]; then
     # Make it obvious the session is running under an isolated user
-    printf '\n\033[1;45;30m  Running Claude Code as %s (isolated from your user)  \033[0m\n\n' "$RUNNER_USER"
+    printf '\n\033[1;45;97m  Running Claude Code as %s (isolated from your user)  \033[0m\n\n' "$RUNNER_USER"
     # Set terminal title as a persistent reminder
     printf '\033]0;Claude (as %s)\007' "$RUNNER_USER"
 
