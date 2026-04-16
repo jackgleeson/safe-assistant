@@ -1,75 +1,75 @@
 # Safe-Assistant
 
-Security-hardening tools for LLM coding assistants. Implements the recommendations from the [Fundraising AI Coding Assistant Safe Usage Guide](https://wikitech.wikimedia.org/wiki/Fundraising/AI).
+Security-hardening tooling for LLM coding assistants. Keeps one shared deny list for IDE assistants and Claude Code, and can run Claude in an isolated runner account for stronger OS-level protection. Implements the [Fundraising AI Coding Assistant Safe Usage Guide](https://wikitech.wikimedia.org/wiki/Fundraising/AI)
 
-## How it works
+## Choose your workflow
 
-`deny-paths.conf` is the shared source of truth: one list of files LLM assistants should not read, synced into two targets, with an optional stronger isolation layer.
+- **Claude Code in the terminal** - install `claude-safe`. Go to [Quick start](#quick-start).
+- **Claude Code inside a JetBrains IDE** - install `claude-safe`, then point the [Claude Code plugin](https://plugins.jetbrains.com/plugin/27310-claude-code-beta-) at it. Go to [Quick start](#quick-start), then [JetBrains plugin](#jetbrains-plugin).
+- **JetBrains AI / Cursor / Windsurf / VS Code / VS Codium**  no install needed. Generate ignore files for your project for all IDEs and commit to git. Done. Go to [IDE assistants](#ide-assistants).
 
-- **Shared deny list** - you edit `deny-paths.conf`; everything else is generated.
-- **IDE assistants** - `bin/sync-aiignore` writes `.aiignore`, `.cursorignore`, and `.codeiumignore` into your projects.
-- **CLI assistants (Claude Code)** - `bin/sync-deny-paths` writes deny rules into `~/.claude/settings.json`, and `claude-safe` wraps `claude` with hardening checks and env var stripping.
-- **Optional OS-user isolation** - `claude-runner` runs Claude as a separate OS user that can't read your home directory. Linux and macOS.
+## Quick start
 
-Supported IDE assistants: JetBrains AI, Cursor, Windsurf, VS Code, VS Codium.
-
-## Quick start (IDE assistants)
-
-No install step. Clone and sync:
+1. Run `install.sh` to install `claude-safe` and create the runner account.
+2. Approve project access with `claude-safe-grant-access /path/to/project`.
+3. Start Claude with `claude-safe`.
 
 ```bash
 git clone https://github.com/jackgleeson/safe-assistant
-cd safe-assistant
-nano deny-paths.conf                          # add credentials specific to your environment
-bin/sync-aiignore --dir /path/to/project      # writes all three ignore files into the project
-```
-
-Commit the generated ignore files in the target project. That's where the rules live with the code, get reviewed, and follow everyone who clones the project.
-
-Re-run `bin/sync-aiignore` after any edit to `deny-paths.conf`.
-
-For team-wide rules, fork this repo and keep your team's `deny-paths.conf` there as the shared baseline. Engineers pull from the fork and only update it when a new team-wide rule is added.
-
-## CLI assistants (Claude Code)
-
-The `claude-safe` wrapper runs hardening checks and strips sensitive env vars before launching `claude`. A one-time install puts it on your `PATH` and syncs deny rules into `~/.claude/settings.json`.
-
-### Install
-
-```bash
-git clone https://github.com/jackgleeson/safe-assistant  # skip if already cloned
 cd safe-assistant
 bash install.sh            # interactive setup
 bash install.sh --dry-run  # preview without making changes
 ```
 
-The installer verifies OS hardening (ptrace_scope on Linux, SIP on macOS), offers to install missing Linux deps via apt/npm, syncs `deny-paths.conf` into `~/.claude/settings.json`, symlinks `claude-safe` into `~/.local/bin/`, and offers to set up the `claude-runner` isolated user (Linux or macOS).
+`install.sh`:
 
-### Uninstall
+- Verifies OS hardening (`ptrace_scope` on Linux, SIP on macOS).
+- Offers to install missing Linux deps that [Claude Code's sandbox requires](https://code.claude.com/docs/en/sandboxing#prerequisites) via apt/npm.
+- Syncs `deny-paths.conf` into `~/.claude/settings.json` and turns on Claude's bash sandbox (`sandbox.enabled: true`).
+- Puts `claude-safe` on your `PATH`.
+- Sets up the runner account (`claude-runner` on Linux, `_claude-runner` on macOS).
+
+On macOS, Claude's OAuth sign-in for the runner account happens inline: a URL opens in your browser and you paste the returned code back into the runner's terminal.
+
+## JetBrains plugin
+
+The [Claude Code JetBrains plugin](https://plugins.jetbrains.com/plugin/27310-claude-code-beta-) runs Claude Code in an IDE panel instead of a terminal. To route it through `claude-safe`, open **Settings → Tools → Claude Code [Beta]** and set **Claude command** to `claude-safe`. Every session launched from the IDE then goes through the wrapper, with the same hardening checks, env stripping, and runner account as the CLI.
+
+## Usage
 
 ```bash
-bash uninstall.sh
+claude-safe                                         # start Claude in the runner account
+claude-safe-grant-access /path/to/project           # allow the runner account into a project
+claude-safe-restrict-access /path/to/project        # remove that access again
 ```
 
-Interactively reverses each step: removes the `~/.local/bin` symlinks, strips `deny-paths.conf` rules from `~/.claude/settings.json` (with a backup), deletes the `claude-runner` user (and group on macOS), revokes project ACLs granted via `claude-safe-grant-access`, and on Linux offers to remove `/etc/sysctl.d/10-ptrace.conf`. The repo itself is left in place.
+If isolation is unavailable, `claude-safe` can fall back to your own user with a warning, but the recommended setup is to use the runner account for the strongest security. 
 
-### Usage
+Flags:
 
 ```bash
-claude-safe                          # Run Claude Code with hardening
-claude-safe --current-user           # Always run as the current user
 claude-safe --strict                 # Fail on any hardening check
 claude-safe --skip-checks            # Skip hardening checks (still strips env vars)
-claude-safe -- --model sonnet        # Pass args through to claude
+claude-safe -- --model opus        # Pass args through to claude
+claude-safe --current-user           # Escape hatch: run as your own user instead of the runner account
 ```
+
+`--current-user` is there for cases where you genuinely need access the runner doesn't have (debugging a tool, working on a file outside your approved projects). Use it sparingly: Claude then has the same reach you do. A useful exercise is to run `claude-safe` and `claude-safe --current-user` side by side in the same project and ask Claude what it can see. The difference is exactly what the runner account is protecting.
 
 Before launch, `claude-safe`:
 
 1. Verifies OS hardening: `ptrace_scope` plus sandbox deps (`bwrap`, `socat`, `ripgrep`, `@anthropic-ai/sandbox-runtime`) on Linux, SIP on macOS.
-2. Strips `SSH_AUTH_SOCK`, `GPG_AGENT_INFO`, and `DBUS_SESSION_BUS_ADDRESS` so Claude can't use your agents or D-Bus session.
-3. Launches Claude, either as your user or as the runner user (`claude-runner` on Linux, `_claude-runner` on macOS) if isolation is set up.
+2. Verifies `sandbox.enabled: true` in the `settings.json` that the session will read (yours or the runner's), so Claude's bash sandbox is actually on.
+3. Strips `SSH_AUTH_SOCK`, `GPG_AGENT_INFO`, and `DBUS_SESSION_BUS_ADDRESS` so Claude can't reuse your agents or D-Bus session.
+4. Launches Claude, either as your user or as the runner account.
 
-### Re-syncing the deny list
+## Why the isolated runner account is safer
+
+Safe-Assistant creates a separate, locked-down OS account called `claude-runner` (`_claude-runner` on macOS). The account has no password and can't be logged into. When Claude runs under it, the only folders it can open are the specific projects you've approved. Credentials, customer data, other projects, and every other file on the machine stay out of reach.
+
+Without this, the standard Claude Code deny rules in `settings.json` only work if the assistant chooses to honour them. With an isolated account, the operating system does the blocking directly, so there's no prompt, command, or workaround that lets Claude reach files it hasn't been given access to. The account simply doesn't have permission.
+
+## Re-syncing the deny list
 
 After editing `deny-paths.conf`:
 
@@ -86,27 +86,16 @@ bash: node *
 bash: npm *
 ```
 
-## Optional OS-user isolation
+## Verifying isolation
 
-`claude-runner` is a dedicated OS user account (`claude-runner` on Linux, `_claude-runner` on macOS) with no password and no login shell access. When Claude runs as this user, the kernel refuses every read or write to anything outside the project directories you've explicitly granted: your SSH private keys, GPG keyring, `.env` files in other projects, shell history, and any other file owned by your user are all unreachable. Access is granted per-project via file ACLs (POSIX on Linux, native ACLs on macOS), and revoked with `claude-safe-restrict-access`.
-
-This is a substantially stronger guarantee than the deny rules in `settings.json`, which depend on Claude's tool layer correctly classifying every tool call and matching every glob. Those rules are policy. OS-level user separation is enforced by the kernel on every syscall, so no amount of creative `bash` invocation, symlink trickery, or prompt injection can bypass it: the runner simply doesn't have permission.
-
-One-time setup:
+`claude-safe-access-status` scans under `$HOME` and prints every directory with a `claude-runner` (or `_claude-runner`) ACL entry, split into grants, explicit denies, and traverse-only ancestors:
 
 ```bash
-bin/setup-claude-runner                             # create user, configure sudoers, authenticate Claude
-claude-safe-grant-access /path/to/project           # grant runner access to a project
-claude-safe-restrict-access /path/to/project        # revoke runner access later
+claude-safe-access-status              # scan $HOME
+claude-safe-access-status ~/Projects   # scan a subtree
 ```
 
-After setup, plain `claude-safe` automatically uses the runner when it's fully configured and falls back to running as your user (with a clear warning) otherwise.
-
-On macOS, the OAuth auth step runs inline: `setup-claude-runner` launches `sudo -u _claude-runner -i claude`, Claude prints an auth URL that opens in your browser, and you paste the code back into the runner's terminal.
-
-### Verifying isolation
-
-Because you have passwordless sudo to the runner, you can check exactly what the runner can and can't see without launching Claude. Substitute `_claude-runner` on macOS.
+For spot checks on a single path, you have passwordless sudo to the runner and can see exactly what it sees. Substitute `_claude-runner` on macOS.
 
 ```bash
 # Should succeed: runner can read a granted project.
@@ -128,6 +117,23 @@ getfacl -p ~/Projects/granted-project
 ls -lde ~/Projects/granted-project
 ```
 
+## IDE assistants
+
+No install step. Clone and sync:
+
+```bash
+git clone https://github.com/jackgleeson/safe-assistant  # skip if already cloned
+cd safe-assistant
+nano deny-paths.conf                          # add credentials specific to your environment
+bin/sync-aiignore --dir /path/to/project      # writes all three ignore files into the project
+```
+
+Commit the generated ignore files in the target project. That's where the rules live with the code, get reviewed, and follow everyone who clones the project.
+
+Re-run `bin/sync-aiignore` after any edit to `deny-paths.conf`.
+
+For team-wide rules, fork this repo and keep your team's `deny-paths.conf` there as the shared baseline. Engineers pull from the fork and only update it when a new team-wide rule is added.
+
 ## Reference
 
 ### deny-paths.conf format
@@ -148,7 +154,7 @@ ls -lde ~/Projects/granted-project
 
 Applies to `claude-safe` only. The IDE assistant flow (`bin/sync-aiignore`) works anywhere Bash runs.
 
-| Platform | Hardening checks | Env stripping | Deny sync | claude-runner |
+| Platform | Hardening checks | Env stripping | Deny sync | Runner account |
 |---|---|---|---|---|
 | Linux (Debian/Ubuntu) | ✓ | ✓ | ✓ | ✓ |
 | Linux (other distros) | ✓ | ✓ | ✓ | ✓ (install deps manually) |
@@ -172,3 +178,11 @@ Linux also needs:
 macOS: SIP is verified via the built-in `csrutil`; no extra packages required.
 
 The installer can install all Linux packages on Debian/Ubuntu via `apt` and `npm`.
+
+## Uninstall
+
+```bash
+bash uninstall.sh
+```
+
+Interactively reverses each step: removes the `~/.local/bin` symlinks, strips `deny-paths.conf` rules from `~/.claude/settings.json` (with a backup), deletes the `claude-runner` user (and group on macOS), revokes project ACLs granted via `claude-safe-grant-access`, and on Linux offers to remove `/etc/sysctl.d/10-ptrace.conf`. The repo itself is left in place.

@@ -41,5 +41,9 @@ info() {
 }
 
 ok() {
-    printf '\033[32m[safe-assistant] ✓\033[0m %s\n' "$1" >&2
+    if [[ $# -gt 1 ]]; then
+        printf '\033[32m[safe-assistant] ✓\033[0m %s \033[38;5;248m- %s\033[0m\n' "$1" "$2" >&2
+    else
+        printf '\033[32m[safe-assistant] ✓\033[0m %s\n' "$1" >&2
+    fi
 }

@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+LIB_DIR="$(dirname "$SCRIPT_DIR")/lib"
+
+source "$LIB_DIR/check-platform.sh"
+
+detect_platform
+
+usage() {
+    cat <<EOF
+Usage: claude-safe-access-status [OPTIONS] [ROOT]
+
+Scan ROOT (default: \$HOME) for directories with $RUNNER_USER ACL entries
+and print whether each one is a grant, deny, or traverse-only entry.
+
+  grant      $RUNNER_USER can read (and usually write) the directory.
+  deny       $RUNNER_USER is explicitly blocked from the directory.
+  traverse   $RUNNER_USER can enter the directory but not list it (ancestor
+             of a granted project).
+
+Options:
+  --depth N    Max scan depth (default: 5).
+  -h, --help   Show this help message.
+
+Examples:
+  claude-safe-access-status
+  claude-safe-access-status ~/Projects
+  claude-safe-access-status --depth 3 ~/work
+EOF
+    exit 0
+}
+
+DEPTH=5
+ROOT=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --depth) DEPTH="$2"; shift 2 ;;
+        -h|--help) usage ;;
+        *) ROOT="$1"; shift ;;
+    esac
+done
+
+ROOT="${ROOT:-$HOME}"
+
+if [[ ! -d "$ROOT" ]]; then
+    fail "Not a directory: $ROOT"
+fi
+
+case "$SAFE_ASSISTANT_OS" in
+    linux)
+        command -v getfacl &>/dev/null \
+            || fail "getfacl not found. Install the acl package: sudo apt install acl"
+        id "$RUNNER_USER" &>/dev/null \
+            || fail "User '$RUNNER_USER' does not exist."
+        ;;
+    macos)
+        dscl . -read "/Users/$RUNNER_USER" &>/dev/null \
+            || fail "User '$RUNNER_USER' does not exist."
+        ;;
+    *)
+        fail "claude-safe-access-status only supports Linux and macOS."
+        ;;
+esac
+
+ROOT="$(readlink -f "$ROOT")"
+
+_PRUNE_LINUX=( -name 'node_modules' -o -name '.git' -o -name '.nvm'
+               -o -name '.npm' -o -name '.cache' )
+_PRUNE_MACOS=( -name 'Library' -o -name 'node_modules' -o -name '.git'
+               -o -name '.nvm' -o -name '.npm' -o -name '.cache'
+               -o -name '.Trash' -o -name 'Applications' )
+
+# Classify the $RUNNER_USER ACL entry on $1.
+# Echoes one of: grant | deny | traverse | none
+classify_linux() {
+    local path="$1"
+    local line
+    line=$(getfacl -p --absolute-names "$path" 2>/dev/null \
+        | grep -E "^user:$RUNNER_USER:" | head -n1 || true)
+    [[ -z "$line" ]] && { echo none; return; }
+    local perms="${line#user:$RUNNER_USER:}"
+    case "$perms" in
+        ---)            echo deny ;;
+        --x|--[xX])     echo traverse ;;
+        *[rwX]*)        echo grant ;;
+        *)              echo none ;;
+    esac
+}
+
+classify_macos() {
+    local path="$1"
+    local line
+    line=$(ls -lde "$path" 2>/dev/null \
+        | awk -v u="$RUNNER_USER" '/^[[:space:]]+[0-9]+:/ && $0 ~ ("user:" u " ") {print; exit}')
+    [[ -z "$line" ]] && { echo none; return; }
+    if [[ "$line" == *" deny "* ]]; then
+        echo deny
+    elif [[ "$line" == *"allow read"* || "$line" == *"allow list"* || "$line" == *"allow write"* ]]; then
+        # Distinguish full grants from traverse-only ACEs.
+        if [[ "$line" == *" execute"* && "$line" != *"read"* && "$line" != *"list"* && "$line" != *"write"* ]]; then
+            echo traverse
+        else
+            echo grant
+        fi
+    else
+        echo traverse
+    fi
+}
+
+info "Scanning $ROOT for $RUNNER_USER ACL entries (depth <= $DEPTH)..."
+
+prune=()
+classify=classify_linux
+if [[ "$SAFE_ASSISTANT_OS" == "macos" ]]; then
+    prune=("${_PRUNE_MACOS[@]}")
+    classify=classify_macos
+else
+    prune=("${_PRUNE_LINUX[@]}")
+fi
+
+grants=()
+denies=()
+traverses=()
+
+while IFS= read -r d; do
+    [[ -z "$d" ]] && continue
+    kind=$("$classify" "$d")
+    case "$kind" in
+        grant)    grants+=("$d") ;;
+        deny)     denies+=("$d") ;;
+        traverse) traverses+=("$d") ;;
+    esac
+done < <(find "$ROOT" -maxdepth "$DEPTH" \
+    \( "${prune[@]}" \) -prune \
+    -o -type d -print 2>/dev/null || true)
+
+total=$(( ${#grants[@]} + ${#denies[@]} + ${#traverses[@]} ))
+
+if [[ "$total" -eq 0 ]]; then
+    info "No $RUNNER_USER ACL entries found under $ROOT"
+    exit 0
+fi
+
+if [[ ${#grants[@]} -gt 0 ]]; then
+    echo ""
+    echo "grant (read/write):"
+    printf '  %s\n' "${grants[@]}"
+fi
+
+if [[ ${#denies[@]} -gt 0 ]]; then
+    echo ""
+    echo "deny (explicitly blocked):"
+    printf '  %s\n' "${denies[@]}"
+fi
+
+if [[ ${#traverses[@]} -gt 0 ]]; then
+    echo ""
+    echo "traverse (enter-only, ancestor of a grant):"
+    printf '  %s\n' "${traverses[@]}"
+fi
+
+echo ""
+info "$total director$([[ $total -eq 1 ]] && echo y || echo ies) with $RUNNER_USER ACL entries"

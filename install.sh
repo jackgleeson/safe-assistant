@@ -213,6 +213,7 @@ if [[ "$DRY_RUN" == "false" ]]; then
     _ensure_exec "$BIN_DIR/setup-claude-runner"
     _ensure_exec "$BIN_DIR/claude-safe-grant-access"
     _ensure_exec "$BIN_DIR/claude-safe-restrict-access"
+    _ensure_exec "$BIN_DIR/claude-safe-access-status"
     _ensure_exec "$SCRIPT_DIR/install.sh"
 
     mkdir -p "$HOME/.local/bin"
@@ -227,6 +228,12 @@ if [[ "$DRY_RUN" == "false" ]]; then
     if [[ ! -L "$RESTRICT_TARGET" || "$(readlink -f "$RESTRICT_TARGET")" != "$BIN_DIR/claude-safe-restrict-access" ]]; then
         ln -sf "$BIN_DIR/claude-safe-restrict-access" "$RESTRICT_TARGET"
         ok "Installed claude-safe-restrict-access to $RESTRICT_TARGET"
+    fi
+
+    STATUS_TARGET="$HOME/.local/bin/claude-safe-access-status"
+    if [[ ! -L "$STATUS_TARGET" || "$(readlink -f "$STATUS_TARGET")" != "$BIN_DIR/claude-safe-access-status" ]]; then
+        ln -sf "$BIN_DIR/claude-safe-access-status" "$STATUS_TARGET"
+        ok "Installed claude-safe-access-status to $STATUS_TARGET"
     fi
 fi
 
@@ -272,4 +279,5 @@ echo "    bin/setup-claude-runner                        # create runner user"
 echo "    claude-safe-grant-access DIR                   # grant runner access to DIR"
 echo "    claude-safe-restrict-access DIR                # revoke runner access to DIR"
 echo "    claude-safe-grant-access --revoke DIR          # equivalent to claude-safe-restrict-access"
+echo "    claude-safe-access-status [ROOT]               # list all grant/deny ACLs for $RUNNER_USER"
 echo ""

@@ -212,6 +212,8 @@ fi
 RUNNER_SETTINGS="$RUNNER_CLAUDE_DIR/settings.json"
 info "Syncing deny paths to $RUNNER_SETTINGS..."
 tmp_settings="$(mktemp)"
+# Seed with {} so sync-deny-paths has valid JSON to merge into.
+echo '{}' > "$tmp_settings"
 "$SCRIPT_DIR/sync-deny-paths" --settings "$tmp_settings"
 sudo cp "$tmp_settings" "$RUNNER_SETTINGS"
 sudo chown "$RUNNER_USER:$RUNNER_USER" "$RUNNER_SETTINGS"

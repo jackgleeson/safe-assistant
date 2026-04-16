@@ -115,8 +115,15 @@ if [[ ! -f "$SETTINGS_FILE" ]]; then
         echo '{}' > "$SETTINGS_FILE"
         existing='{}'
     fi
+elif [[ ! -s "$SETTINGS_FILE" ]]; then
+    # File exists but is empty - treat as a fresh {} so jq has valid input.
+    existing='{}'
 else
     existing=$(cat "$SETTINGS_FILE")
+    # Reject non-JSON input loudly rather than let jq produce empty output.
+    if ! echo "$existing" | jq empty &>/dev/null; then
+        fail "$SETTINGS_FILE is not valid JSON. Fix or delete it and re-run."
+    fi
 
     # Back up existing settings before modifying
     if [[ "$existing" != '{}' && "$DRY_RUN" == "false" ]]; then
@@ -136,7 +143,7 @@ updated=$(echo "$existing" | jq \
     .permissions.allow //= [] |
     .permissions.ask //= [] |
     .sandbox //= {} |
-    .sandbox.enabled //= true |
+    .sandbox.enabled = true |
     .sandbox.filesystem //= {} |
     .sandbox.filesystem.allowWrite //= ["/tmp"] |
 
@@ -159,7 +166,10 @@ else
     old_sandbox=$(echo "$existing" | jq -r '.sandbox.filesystem.denyRead // [] | .[]' 2>/dev/null | sort)
     new_sandbox=$(echo "$updated" | jq -r '.sandbox.filesystem.denyRead // [] | .[]' | sort)
 
-    if [[ "$old_deny" == "$new_deny" && "$old_sandbox" == "$new_sandbox" ]]; then
+    old_enabled=$(echo "$existing" | jq -r '.sandbox.enabled // false' 2>/dev/null)
+    new_enabled=$(echo "$updated" | jq -r '.sandbox.enabled // false')
+
+    if [[ "$old_deny" == "$new_deny" && "$old_sandbox" == "$new_sandbox" && "$old_enabled" == "$new_enabled" ]]; then
         ok "settings.json already in sync"
     else
         added_deny=$(comm -13 <(echo "$old_deny") <(echo "$new_deny"))
@@ -171,6 +181,7 @@ else
         [[ -n "$added_deny" ]] && { echo "  permissions.deny added:"; echo "$added_deny" | sed 's/^/    + /'; }
         [[ -n "$removed_sandbox" ]] && { echo "  sandbox.filesystem.denyRead removed:"; echo "$removed_sandbox" | sed 's/^/    - /'; }
         [[ -n "$added_sandbox" ]] && { echo "  sandbox.filesystem.denyRead added:"; echo "$added_sandbox" | sed 's/^/    + /'; }
+        [[ "$old_enabled" != "$new_enabled" ]] && echo "  sandbox.enabled: $old_enabled -> $new_enabled"
 
         echo "$updated" | jq . > "$SETTINGS_FILE"
         ok "Updated $SETTINGS_FILE"

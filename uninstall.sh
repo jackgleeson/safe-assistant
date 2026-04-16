@@ -44,7 +44,7 @@ echo ""
 echo "--- Remove PATH symlinks ---"
 echo ""
 
-for name in claude-safe claude-safe-grant-access; do
+for name in claude-safe claude-safe-grant-access claude-safe-restrict-access claude-safe-access-status; do
     target="$HOME/.local/bin/$name"
     if [[ -L "$target" ]]; then
         resolved="$(readlink -f "$target" 2>/dev/null || echo "")"
