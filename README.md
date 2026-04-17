@@ -1,6 +1,6 @@
 # Safe-Assistant
 
-Security-hardening tooling for LLM coding assistants. Keeps one shared deny list for IDE assistants and Claude Code, and can run Claude in an isolated runner account for stronger OS-level protection. Implements the [Fundraising AI Coding Assistant Safe Usage Guide](https://wikitech.wikimedia.org/wiki/Fundraising/AI)
+Security-hardening tooling for LLM coding assistants. Keeps one shared deny list for IDE assistants and Claude Code, and can run Claude in an isolated user account for stronger OS-level protection. Implements the [Fundraising AI Coding Assistant Safe Usage Guide](https://wikitech.wikimedia.org/wiki/Fundraising/AI)
 
 ## Choose your workflow
 
@@ -10,7 +10,7 @@ Security-hardening tooling for LLM coding assistants. Keeps one shared deny list
 
 ## Quick start
 
-1. Run `install.sh` to install `claude-safe` and create the runner account.
+1. Run `install.sh` to install `claude-safe` and create the isolated user account.
 2. Approve project access with `claude-safe-grant-access /path/to/project`.
 3. Start Claude with `claude-safe`.
 
@@ -27,23 +27,23 @@ bash install.sh --dry-run  # preview without making changes
 - Offers to install missing Linux deps that [Claude Code's sandbox requires](https://code.claude.com/docs/en/sandboxing#prerequisites) via apt/npm.
 - Syncs `deny-paths.conf` into `~/.claude/settings.json` and turns on Claude's bash sandbox (`sandbox.enabled: true`).
 - Puts `claude-safe` on your `PATH`.
-- Sets up the runner account (`claude-runner` on Linux, `_claude-runner` on macOS).
+- Sets up the isolated user account (`claude-runner` on Linux, `_claude-runner` on macOS).
 
 On macOS, Claude's OAuth sign-in for the runner account happens inline: a URL opens in your browser and you paste the returned code back into the runner's terminal.
 
 ## JetBrains plugin
 
-The [Claude Code JetBrains plugin](https://plugins.jetbrains.com/plugin/27310-claude-code-beta-) runs Claude Code in an IDE panel instead of a terminal. To route it through `claude-safe`, open **Settings → Tools → Claude Code [Beta]** and set **Claude command** to `claude-safe`. Every session launched from the IDE then goes through the wrapper, with the same hardening checks, env stripping, and runner account as the CLI.
+The [Claude Code JetBrains plugin](https://plugins.jetbrains.com/plugin/27310-claude-code-beta-) runs Claude Code in an IDE panel instead of a terminal. To route it through `claude-safe`, open **Settings → Tools → Claude Code [Beta]** and set **Claude command** to `claude-safe`. Every session launched from the IDE then goes through the wrapper, with the same hardening checks, env stripping, and isolated user account in the CLI.
 
 ## Usage
 
 ```bash
-claude-safe                                         # start Claude in the runner account
-claude-safe-grant-access /path/to/project           # allow the runner account into a project
+claude-safe                                         # start Claude in the isolated user account
+claude-safe-grant-access /path/to/project           # allow the isolated account into a project
 claude-safe-restrict-access /path/to/project        # remove that access again
 ```
 
-If isolation is unavailable, `claude-safe` can fall back to your own user with a warning, but the recommended setup is to use the runner account for the strongest security. 
+If isolation is unavailable, `claude-safe` can fall back to your own user with a warning, but the recommended setup is to use the dedicated isolated user account for the strongest security. 
 
 Flags:
 
@@ -51,19 +51,19 @@ Flags:
 claude-safe --strict                 # Fail on any hardening check
 claude-safe --skip-checks            # Skip hardening checks (still strips env vars)
 claude-safe -- --model opus        # Pass args through to claude
-claude-safe --current-user           # Escape hatch: run as your own user instead of the runner account
+claude-safe --current-user           # Escape hatch: run as your own user instead of the isolated account
 ```
 
-`--current-user` is there for cases where you genuinely need access the runner doesn't have (debugging a tool, working on a file outside your approved projects). Use it sparingly: Claude then has the same reach you do. A useful exercise is to run `claude-safe` and `claude-safe --current-user` side by side in the same project and ask Claude what it can see. The difference is exactly what the runner account is protecting.
+`--current-user` is there for cases where you genuinely need access that the isolated doesn't have (debugging a tool, working on a file outside your approved projects). Use it sparingly: Claude then has the same reach you do. A useful exercise is to run `claude-safe` and `claude-safe --current-user` side by side in the same project and ask Claude what it can see. The difference is exactly what the isolated account is protecting.
 
 Before launch, `claude-safe`:
 
 1. Verifies OS hardening: `ptrace_scope` plus sandbox deps (`bwrap`, `socat`, `ripgrep`, `@anthropic-ai/sandbox-runtime`) on Linux, SIP on macOS.
-2. Verifies `sandbox.enabled: true` in the `settings.json` that the session will read (yours or the runner's), so Claude's bash sandbox is actually on.
+2. Verifies `sandbox.enabled: true` in the `settings.json` that the session will read, so Claude's bash sandbox is actually on.
 3. Strips `SSH_AUTH_SOCK`, `GPG_AGENT_INFO`, and `DBUS_SESSION_BUS_ADDRESS` so Claude can't reuse your agents or D-Bus session.
-4. Launches Claude, either as your user or as the runner account.
+4. Launches Claude, either as your user or as the isolated user account.
 
-## Why the isolated runner account is safer
+## Why the isolated user account is safer
 
 Safe-Assistant creates a separate, locked-down OS account called `claude-runner` (`_claude-runner` on macOS). The account has no password and can't be logged into. When Claude runs under it, the only folders it can open are the specific projects you've approved. Credentials, user data, other projects, and every other file on the machine stay out of reach.
 
@@ -95,10 +95,10 @@ claude-safe-access-status              # scan $HOME
 claude-safe-access-status ~/Projects   # scan a subtree
 ```
 
-For spot checks on a single path, you have passwordless sudo to the runner and can see exactly what it sees. Substitute `_claude-runner` on macOS.
+For spot checks on a single path, you have passwordless sudo to the isolated account and can see exactly what it sees. Substitute `_claude-runner` on macOS.
 
 ```bash
-# Should succeed: runner can read a granted project.
+# Should succeed: isolated account can read a granted project.
 sudo -u claude-runner ls ~/Projects/granted-project
 
 # Should fail with "Permission denied": your home directory is off-limits.
