@@ -193,10 +193,37 @@ else
     fi
 fi
 
-# Check if ~/.local/bin is in PATH
+# Check if ~/.local/bin is in PATH; offer to add it to the user's shell profile
 if ! echo "$PATH" | tr ':' '\n' | grep -q "$HOME/.local/bin"; then
     warn "$HOME/.local/bin is not in your PATH"
-    echo "  Add this to your shell profile: export PATH=\"\$HOME/.local/bin:\$PATH\""
+
+    shell_name="$(basename "${SHELL:-}")"
+    case "$shell_name" in
+        zsh)  profile="$HOME/.zshrc" ;;
+        bash)
+            if [[ "$SAFE_ASSISTANT_OS" == "macos" ]]; then
+                profile="$HOME/.bash_profile"
+            else
+                profile="$HOME/.bashrc"
+            fi
+            ;;
+        *) profile="" ;;
+    esac
+
+    export_line='export PATH="$HOME/.local/bin:$PATH"'
+
+    if [[ -n "$profile" ]] && ! grep -qsF "$export_line" "$profile"; then
+        if prompt_yn "Append 'export PATH=\"\$HOME/.local/bin:\$PATH\"' to $profile?"; then
+            dry_run_skip "append PATH export to $profile" || {
+                printf '\n# Added by safe-assistant installer\n%s\n' "$export_line" >> "$profile"
+                ok "Updated $profile (open a new shell or run: source $profile)"
+            }
+        else
+            echo "  Add this to your shell profile: $export_line"
+        fi
+    elif [[ -z "$profile" ]]; then
+        echo "  Add this to your shell profile: $export_line"
+    fi
 fi
 echo ""
 
