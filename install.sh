@@ -194,6 +194,7 @@ else
 fi
 
 # Check if ~/.local/bin is in PATH; offer to add it to the user's shell profile
+PATH_RELOAD_PROFILE=""
 if ! echo "$PATH" | tr ':' '\n' | grep -q "$HOME/.local/bin"; then
     warn "$HOME/.local/bin is not in your PATH"
 
@@ -216,12 +217,16 @@ if ! echo "$PATH" | tr ':' '\n' | grep -q "$HOME/.local/bin"; then
         if prompt_yn "Append 'export PATH=\"\$HOME/.local/bin:\$PATH\"' to $profile?"; then
             dry_run_skip "append PATH export to $profile" || {
                 printf '\n# Added by safe-assistant installer\n%s\n' "$export_line" >> "$profile"
-                ok "Updated $profile (open a new shell or run: source $profile)"
+                ok "Updated $profile"
+                PATH_RELOAD_PROFILE="$profile"
             }
         else
             echo "  Add this to your shell profile: $export_line"
         fi
-    elif [[ -z "$profile" ]]; then
+    elif [[ -n "$profile" ]]; then
+        # Export line already present in profile, but not in current shell's PATH
+        PATH_RELOAD_PROFILE="$profile"
+    else
         echo "  Add this to your shell profile: $export_line"
     fi
 fi
@@ -308,3 +313,13 @@ echo "    claude-safe-restrict-access DIR                # revoke runner access 
 echo "    claude-safe-grant-access --revoke DIR          # equivalent to claude-safe-restrict-access"
 echo "    claude-safe-access-status [ROOT]               # list all grant/deny ACLs for $RUNNER_USER"
 echo ""
+
+if [[ -n "$PATH_RELOAD_PROFILE" && "$DRY_RUN" == "false" ]]; then
+    echo "--- Next step ---"
+    echo ""
+    echo "  claude-safe is installed, but not yet on PATH in this shell."
+    echo "  Open a new terminal, or run:"
+    echo ""
+    echo "    source $PATH_RELOAD_PROFILE"
+    echo ""
+fi
