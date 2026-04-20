@@ -1,4 +1,4 @@
-# Safe-Assistant
+# Safe Assistant
 
 Security-hardening tooling for LLM coding assistants. Keeps one shared deny list for IDE assistants and Claude Code, and can run Claude in an isolated user account for stronger OS-level protection. Implements the [Fundraising AI Coding Assistant Safe Usage Guide](https://wikitech.wikimedia.org/wiki/Fundraising/AI)
 
@@ -15,7 +15,7 @@ Security-hardening tooling for LLM coding assistants. Keeps one shared deny list
 3. Start Claude with `claude-safe`.
 
 ```bash
-git clone https://github.com/jackgleeson/safe-assistant
+git clone https://gitlab.wikimedia.org/repos/fundraising-tech/safe-assistant
 cd safe-assistant
 bash install.sh            # interactive setup
 bash install.sh --dry-run  # preview without making changes
