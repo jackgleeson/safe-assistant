@@ -8,10 +8,10 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 
 usage() {
     cat <<EOF
-Usage: claude-safe-restrict-access [OPTIONS] DIR
+Usage: claude-safe-restrict-access [OPTIONS] PATH
 
-Revoke claude-runner access to a project directory by removing its ACL
-entries.  This is the inverse of claude-safe-grant-access.
+Revoke claude-runner access to a project directory or a single file by
+removing its ACL entries.  This is the inverse of claude-safe-grant-access.
 
 Note: world permission bits that were locked down when access was granted
 are NOT automatically restored.  Restore them manually if needed.
@@ -22,6 +22,7 @@ Options:
 
 Examples:
   claude-safe-restrict-access ~/Projects/myapp
+  claude-safe-restrict-access ~/Projects/myapp/.env
   claude-safe-restrict-access --dry-run ~/Projects/myapp
 EOF
     exit 0
