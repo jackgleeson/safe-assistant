@@ -69,10 +69,27 @@ echo "--- Remove deny-path rules from Claude Code settings ---"
 echo ""
 
 SETTINGS_FILE="$HOME/.claude/settings.json"
+SNAPSHOT_FILE="$SETTINGS_FILE.pre-install"
 CONF_FILE="$SCRIPT_DIR/deny-paths.conf"
 
 if [[ ! -f "$SETTINGS_FILE" ]]; then
     info "No settings.json found at $SETTINGS_FILE - skipping"
+    [[ -f "$SNAPSHOT_FILE" ]] && rm -f "$SNAPSHOT_FILE"
+elif [[ -f "$SNAPSHOT_FILE" ]]; then
+    echo "  A pre-install snapshot exists at $SNAPSHOT_FILE"
+    echo "  Restoring it will replace the current settings.json with your original settings."
+    echo ""
+    if prompt_yn "Restore settings.json from pre-install snapshot?"; then
+        backup_file="${SETTINGS_FILE}.backup.$(date +%Y%m%dT%H%M%S)"
+        cp "$SETTINGS_FILE" "$backup_file"
+        ok "Backed up current settings to $backup_file"
+        cp "$SNAPSHOT_FILE" "$SETTINGS_FILE"
+        ok "Restored $SETTINGS_FILE from pre-install snapshot"
+        rm -f "$SNAPSHOT_FILE"
+        ok "Removed snapshot $SNAPSHOT_FILE"
+    else
+        info "Skipping restore - snapshot left at $SNAPSHOT_FILE"
+    fi
 elif ! command -v jq &>/dev/null; then
     warn "jq not found - cannot auto-remove deny rules from $SETTINGS_FILE"
     warn "Remove manually: permissions.deny and sandbox.filesystem.denyRead entries from deny-paths.conf"

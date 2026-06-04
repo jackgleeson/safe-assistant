@@ -155,6 +155,11 @@ else
         info "Existing settings found at $CLAUDE_SETTINGS"
         if prompt_yn "Sync deny-paths.conf into settings.json?"; then
             dry_run_skip "sync deny-paths.conf into $CLAUDE_SETTINGS" || {
+                SNAPSHOT="$CLAUDE_SETTINGS.pre-install"
+                if [[ ! -f "$SNAPSHOT" ]]; then
+                    cp "$CLAUDE_SETTINGS" "$SNAPSHOT"
+                    ok "Snapshotted pre-install settings to $SNAPSHOT"
+                fi
                 "$BIN_DIR/sync-deny-paths"
             }
         else
