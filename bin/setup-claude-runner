@@ -158,7 +158,8 @@ elif [[ "$CLAUDE_PATH" == /usr/local/bin/* || "$CLAUDE_PATH" == /usr/bin/* || "$
     ok "claude is in a system-wide location ($CLAUDE_PATH)"
 else
     # Claude is under a user home directory. Grant claude-runner traverse-only
-    # permission on the directory chain so it can reach the binary.
+    # permission on the directory chains so it can reach the binary.
+    LAUNCHER_DIR="$(dirname "$CLAUDE_PATH")"
     RESOLVED_PATH="$(readlink -f "$CLAUDE_PATH")"
     RESOLVED_DIR="$(dirname "$RESOLVED_PATH")"
 
@@ -169,29 +170,36 @@ else
     info "claude is at $CLAUDE_PATH (inside your home directory)"
     info "Granting $RUNNER_USER traverse-only access to the claude binary path"
 
-    acl_dirs=()
-    dir="$RESOLVED_DIR"
-    while [[ "$dir" != "/" ]]; do
-        acl_dirs=("$dir" "${acl_dirs[@]+"${acl_dirs[@]}"}")
-        dir="$(dirname "$dir")"
+    # Walk both the launcher's directory chain (so the symlink itself can be
+    # read) and the resolved target's chain (so the actual binary can be
+    # executed). New versions land alongside the current one, so traverse on
+    # the versions parent dir is enough to keep working after auto-updates.
+    declare -A seen=()
+    for start_dir in "$LAUNCHER_DIR" "$RESOLVED_DIR"; do
+        dir="$start_dir"
+        while [[ "$dir" != "/" ]]; do
+            if [[ -z "${seen[$dir]:-}" ]]; then
+                _grant_traverse "$dir"
+                seen["$dir"]=1
+            fi
+            dir="$(dirname "$dir")"
+        done
     done
+    unset seen
+    ok "Granted $RUNNER_USER traverse access (x only) to reach $CLAUDE_PATH"
 
-    for dir in "${acl_dirs[@]}"; do
-        _grant_traverse "$dir"
-    done
-    ok "Granted $RUNNER_USER traverse access (x only) to reach $RESOLVED_PATH"
-
-    # Symlink so claude-runner can find it in PATH.
+    # Symlink the launcher (not the versioned target) so claude-runner picks
+    # up auto-updates without needing this script to be re-run.
     if [[ ! -L /usr/local/bin/claude ]]; then
-        sudo ln -s "$RESOLVED_PATH" /usr/local/bin/claude
-        ok "Symlinked /usr/local/bin/claude -> $RESOLVED_PATH"
+        sudo ln -s "$CLAUDE_PATH" /usr/local/bin/claude
+        ok "Symlinked /usr/local/bin/claude -> $CLAUDE_PATH"
     else
-        existing_target="$(readlink -f /usr/local/bin/claude)"
-        if [[ "$existing_target" == "$RESOLVED_PATH" ]]; then
-            ok "/usr/local/bin/claude already points to $RESOLVED_PATH"
+        existing_target="$(readlink /usr/local/bin/claude)"
+        if [[ "$existing_target" == "$CLAUDE_PATH" ]]; then
+            ok "/usr/local/bin/claude already points to $CLAUDE_PATH"
         else
-            sudo ln -sf "$RESOLVED_PATH" /usr/local/bin/claude
-            ok "Updated /usr/local/bin/claude -> $RESOLVED_PATH"
+            sudo ln -sf "$CLAUDE_PATH" /usr/local/bin/claude
+            ok "Updated /usr/local/bin/claude -> $CLAUDE_PATH"
         fi
     fi
 fi
@@ -334,6 +342,4 @@ fi
 
 echo ""
 echo "--- Setup complete ---"
-echo ""
-warn "After Claude Code updates, re-run this script to update the symlink."
 echo ""
