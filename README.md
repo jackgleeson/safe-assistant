@@ -34,7 +34,7 @@ On macOS, Claude's OAuth sign-in for the runner account happens inline: a URL op
 
 ## JetBrains plugin
 
-The [Claude Code JetBrains plugin](https://plugins.jetbrains.com/plugin/27310-claude-code-beta-) runs Claude Code in an IDE panel instead of a terminal. To route it through `claude-safe`, open **Settings → Tools → Claude Code [Beta]** and set **Claude command** to `claude-safe`. Every session launched from the IDE then goes through the wrapper, with the same hardening checks, env stripping, and isolated user account in the CLI.
+The [Claude Code JetBrains plugin](https://plugins.jetbrains.com/plugin/27310-claude-code-beta-) runs Claude Code in an IDE panel instead of a terminal. To route it through `claude-safe`, open **Settings → Tools → Claude Code [Beta]** and set **Claude Process Wrapper** in settings to `claude-safe`. Every session launched from the IDE then goes through the wrapper, with the same hardening checks, env stripping, and isolated user account in the CLI.
 
 ## VS Code extension
 
