@@ -41,6 +41,8 @@ The [Claude Code JetBrains plugin](https://plugins.jetbrains.com/plugin/27310-cl
 claude-safe                                         # start Claude in the isolated user account
 claude-safe-grant-access /path/to/project           # allow the isolated account into a project
 claude-safe-restrict-access /path/to/project        # remove that access again
+claude-safe-restrict-access /path/to/project/.env   # block a single file inside a granted project
+claude-safe-grant-access /path/to/project/.env      # re-grant that file
 ```
 
 If isolation is unavailable, `claude-safe` can fall back to your own user with a warning, but the recommended setup is to use the dedicated isolated user account for the strongest security. 
