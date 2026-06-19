@@ -125,13 +125,15 @@ grant_access_prompt() {
     grant_bin="$(command -v claude-safe-grant-access || echo "$SCRIPT_DIR/claude-safe-grant-access")"
 
     warn "$RUNNER_USER has no $missing access to $PWD"
-    echo "  Without it, Claude running as $RUNNER_USER cannot $([[ $missing == read ]] && echo 'see' || echo 'edit') files here."
-    echo ""
-    echo "  This will also chmod o-rwx on every file/dir along the path from"
-    echo "  your home down to $PWD, so $RUNNER_USER cannot see anything else."
-    echo "  Preview the exact changes with:"
-    echo "    claude-safe-grant-access --dry-run $PWD"
-    echo ""
+    # All guidance goes to stderr so stdout stays clean for the stream-json
+    # protocol when launched under the Agent SDK.
+    echo "  Without it, Claude running as $RUNNER_USER cannot $([[ $missing == read ]] && echo 'see' || echo 'edit') files here." >&2
+    echo "" >&2
+    echo "  This will also chmod o-rwx on every file/dir along the path from" >&2
+    echo "  your home down to $PWD, so $RUNNER_USER cannot see anything else." >&2
+    echo "  Preview the exact changes with:" >&2
+    echo "    claude-safe-grant-access --dry-run $PWD" >&2
+    echo "" >&2
     if [[ ! -t 0 ]]; then
         info "Run: claude-safe-grant-access $PWD"
         return 1
@@ -196,10 +198,13 @@ fi
 # --- Launch ---
 
 if [[ "$AS_RUNNER" == "true" ]]; then
-    # Make it obvious the session is running under an isolated user
-    printf '\n\033[1;45;97m  Running Claude Code as %s (isolated from your user)  \033[0m\n\n' "$RUNNER_USER"
+    # Make it obvious the session is running under an isolated user.
+    # These go to stderr, not stdout: when claude-safe is launched by the
+    # Agent SDK (e.g. the VS Code extension), stdout carries the stream-json
+    # protocol and any stray bytes corrupt it.
+    printf '\n\033[1;45;97m  Running Claude Code as %s (isolated from your user)  \033[0m\n\n' "$RUNNER_USER" >&2
     # Set terminal title as a persistent reminder
-    printf '\033]0;Claude (as %s)\007' "$RUNNER_USER"
+    printf '\033]0;Claude (as %s)\007' "$RUNNER_USER" >&2
 
     exec sudo -H -u "$RUNNER_USER" --preserve-env=TERM,COLORTERM,LANG \
         claude "${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}"

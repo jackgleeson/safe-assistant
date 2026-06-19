@@ -6,6 +6,7 @@ Security-hardening tooling for LLM coding assistants. Keeps one shared deny list
 
 - **Claude Code in the terminal** - install `claude-safe`. Go to [Quick start](#quick-start).
 - **Claude Code inside a JetBrains IDE** - Go to [Quick start](#quick-start), then [JetBrains plugin](#jetbrains-plugin).
+- **Claude Code extension for VS Code** - Go to [Quick start](#quick-start), then [VS Code extension](#vs-code-extension).
 - **JetBrains AI / Cursor / Windsurf / VS Code / VS Codium**  no install needed. Generate ignore files for your project for all IDEs and commit to git. Done. Go to [IDE assistants](#ide-assistants).
 
 ## Quick start
@@ -34,6 +35,12 @@ On macOS, Claude's OAuth sign-in for the runner account happens inline: a URL op
 ## JetBrains plugin
 
 The [Claude Code JetBrains plugin](https://plugins.jetbrains.com/plugin/27310-claude-code-beta-) runs Claude Code in an IDE panel instead of a terminal. To route it through `claude-safe`, open **Settings → Tools → Claude Code [Beta]** and set **Claude command** to `claude-safe`. Every session launched from the IDE then goes through the wrapper, with the same hardening checks, env stripping, and isolated user account in the CLI.
+
+## VS Code extension
+
+The Claude Code extension for VS Code runs Claude Code in an editor panel instead of a terminal. To route it through `claude-safe`, set its **Claude command** to `claude-safe`. Every session launched from the editor then goes through the wrapper, with the same hardening checks, env stripping, and isolated user account in the CLI.
+
+One thing to know if you ever modify the wrapper: the extension doesn't run `claude-safe` interactively the way a terminal does. It drives Claude through the Agent SDK, which talks to the subprocess over stdio in the `stream-json` protocol, so anything `claude-safe` prints on stdout corrupts that stream and the session never starts (you'll see "auth status parse failed" and a 60s init timeout). That's why the wrapper sends all of its own output (the hardening banner, the isolation notice, the terminal title, the access prompts) to stderr. Keep it that way.
 
 ## Usage
 
